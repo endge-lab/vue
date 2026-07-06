@@ -4,6 +4,7 @@ import type {
 } from '@endge/core'
 import type {
   SFCVueRenderContext,
+  SFCVueRenderFunction,
   SFCVueRenderH,
   SFCVueRenderListResult,
   SFCVueRenderResult,
@@ -19,7 +20,10 @@ import { SFCRender_Dot } from '@/ui/render/sfc/SFCRender_Dot'
 import { SFCRender_Flex } from '@/ui/render/sfc/SFCRender_Flex'
 import { SFCRender_Icon } from '@/ui/render/sfc/SFCRender_Icon'
 import { SFCRender_Number } from '@/ui/render/sfc/SFCRender_Number'
+import { SFCRender_Table } from '@/ui/render/sfc/SFCRender_Table'
 import { SFCRender_Text } from '@/ui/render/sfc/SFCRender_Text'
+
+const SFCRender_Structural: SFCVueRenderFunction = () => null
 
 /** Рендерит список SFC IR узлов с учетом sibling if / else-if / else chain. */
 export function renderSFCNodes(
@@ -112,6 +116,11 @@ function getSFCElementRenderer(
       return SFCRender_Divider
     case 'Component':
       return SFCRender_Component
+    case 'Table':
+      return SFCRender_Table
+    case 'Column':
+    case 'Cell':
+      return SFCRender_Structural
   }
 }
 
