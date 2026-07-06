@@ -5,6 +5,10 @@ import type {
   RComponentSFC_IR_Node,
   RComponentSFC_IR_Tag,
   RComponentSFC_IR_Value,
+  RuntimeHostInputSource,
+  RuntimeHostLocalInputSource,
+  RuntimeHostRaphInputBinding,
+  RuntimeHostRaphInputSource,
 } from '@endge/core'
 import type { h as VueH, VNode } from 'vue'
 
@@ -47,27 +51,16 @@ export interface SFCVueRenderAdapterProps {
 }
 
 /** Локальный источник входных props для runtime renderer-а. */
-export interface SFCVueLocalInputSource {
-  kind: 'local'
-  props: Record<string, unknown>
-}
+export type SFCVueLocalInputSource = RuntimeHostLocalInputSource
 
-/** Binding на будущий runtime/Raph источник данных. */
-export interface SFCVueRaphInputBinding {
-  nodeId: string
-  path?: string
-}
+/** Binding на runtime/Raph источник данных. */
+export type SFCVueRaphInputBinding = RuntimeHostRaphInputBinding
 
 /** Источник входных props из runtime/Raph-хранилища. */
-export interface SFCVueRaphInputSource {
-  kind: 'raph'
-  bindings: Record<string, SFCVueRaphInputBinding>
-}
+export type SFCVueRaphInputSource = RuntimeHostRaphInputSource
 
 /** Источник входных props для SFC runtime bridge. */
-export type SFCVueRuntimeInputSource
-  = | SFCVueLocalInputSource
-    | SFCVueRaphInputSource
+export type SFCVueRuntimeInputSource = RuntimeHostInputSource
 
 /** Вход Vue runtime renderer-а, связывающего RuntimeHost и render root. */
 export interface SFCVueRuntimeRendererProps {

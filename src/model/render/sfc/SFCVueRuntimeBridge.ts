@@ -2,7 +2,9 @@ import type {
   SFCVueRuntimeBridgeUpdate,
   SFCVueRuntimeInputSource,
 } from '@/domain/types/sfc-render.type'
-import type { ComponentSFCRuntimeHost } from '@endge/core'
+import type { ComponentSFCRuntimeHost, RuntimeHostUpdateContext } from '@endge/core'
+
+import { Raph } from '@endge/raph'
 
 /**
  * Связывает runtime-host SFC-компонента с Vue render root.
@@ -13,6 +15,10 @@ export class SFCVueRuntimeBridge {
   private readonly _onUpdate: SFCVueRuntimeBridgeUpdate
   private _input: SFCVueRuntimeInputSource
   private _isMounted = false
+  private readonly _propsDirtyHandler = (_ctx: RuntimeHostUpdateContext): void => {
+    if (this._isMounted)
+      this._emitResolvedProps()
+  }
 
   constructor(input: {
     host: ComponentSFCRuntimeHost
@@ -32,6 +38,8 @@ export class SFCVueRuntimeBridge {
       return
 
     this._isMounted = true
+    this._host.setInputSource(this._input)
+    this._host.on('props:dirty', this._propsDirtyHandler)
     this._emitResolvedProps()
   }
 
@@ -40,6 +48,7 @@ export class SFCVueRuntimeBridge {
    */
   public updateInput(input: SFCVueRuntimeInputSource): void {
     this._input = input
+    this._host.setInputSource(input)
 
     if (this._isMounted)
       this._emitResolvedProps()
@@ -47,9 +56,9 @@ export class SFCVueRuntimeBridge {
 
   /**
    * Освобождает подписки bridge.
-   * Для local input подписок нет, Raph-подписки появятся на следующем этапе.
    */
   public destroy(): void {
+    this._host.off('props:dirty', this._propsDirtyHandler)
     this._isMounted = false
   }
 
@@ -72,6 +81,14 @@ export class SFCVueRuntimeBridge {
   }
 
   private _resolveRaphProps(): Record<string, unknown> {
-    throw new Error('[SFCVueRuntimeBridge] raph input source is not implemented yet')
+    if (this._input.kind !== 'raph')
+      return {}
+
+    const props: Record<string, unknown> = {}
+    for (const [prop, binding] of Object.entries(this._input.bindings)) {
+      props[prop] = Raph.get(binding.path)
+    }
+
+    return props
   }
 }
