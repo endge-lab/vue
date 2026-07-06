@@ -1,4 +1,5 @@
 import type {
+  ComponentSFCRuntimeHost,
   RComponentSFC_IR,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
@@ -44,6 +45,40 @@ export interface SFCVueRenderAdapterProps {
   props?: Record<string, unknown>
   renderVersion?: number
 }
+
+/** Локальный источник входных props для runtime renderer-а. */
+export interface SFCVueLocalInputSource {
+  kind: 'local'
+  props: Record<string, unknown>
+}
+
+/** Binding на будущий runtime/Raph источник данных. */
+export interface SFCVueRaphInputBinding {
+  nodeId: string
+  path?: string
+}
+
+/** Источник входных props из runtime/Raph-хранилища. */
+export interface SFCVueRaphInputSource {
+  kind: 'raph'
+  bindings: Record<string, SFCVueRaphInputBinding>
+}
+
+/** Источник входных props для SFC runtime bridge. */
+export type SFCVueRuntimeInputSource
+  = | SFCVueLocalInputSource
+    | SFCVueRaphInputSource
+
+/** Вход Vue runtime renderer-а, связывающего RuntimeHost и render root. */
+export interface SFCVueRuntimeRendererProps {
+  host: ComponentSFCRuntimeHost | null
+  input: SFCVueRuntimeInputSource
+}
+
+/** Callback обновления materialized props из runtime bridge в Vue root. */
+export type SFCVueRuntimeBridgeUpdate = (
+  props: Record<string, unknown>,
+) => void
 
 /** Тип Vue h-функции, который нужен renderer-слою без привязки к компоненту. */
 export type SFCVueRenderH = typeof VueH
