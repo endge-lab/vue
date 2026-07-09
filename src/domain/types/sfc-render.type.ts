@@ -33,6 +33,22 @@ export interface SFCVueRenderContext {
   locals: Record<string, unknown>
   iteration: SFCVueRenderIteration | null
   renderVersion: number
+  host: ComponentSFCRuntimeHost | null
+  runtimeState: SFCVueRuntimeStateController | null
+}
+
+/** Structural runtime-state controller contract used by Vue render adapters. */
+export interface SFCVueRuntimeStateController {
+  readonly runtimeId: string
+  readonly storageKey: string
+
+  get<T>(entityKey: string, section: string, fallback: T): T
+
+  set<T>(entityKey: string, section: string, value: T): void
+
+  remove(entityKey: string, section?: string): void
+
+  clear(): void
 }
 
 /** Данные текущей for-итерации. */
@@ -49,6 +65,7 @@ export interface SFCVueRenderAdapterProps {
   ir: RComponentSFC_IR | null
   props?: Record<string, unknown>
   renderVersion?: number
+  host?: ComponentSFCRuntimeHost | null
 }
 
 /** Локальный источник входных props для runtime renderer-а. */

@@ -33,6 +33,7 @@ import type {
   SFCVueRenderContext,
   SFCVueRenderFunction,
   SFCVueRenderH,
+  SFCVueRuntimeStateController,
 } from '@/domain/types/sfc-render.type'
 import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
 import { extendSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
@@ -170,6 +171,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const source = rows.map(row => normalizeRowSnapshot(row, rowKey))
   const sortMode = normalizeComponentSFCTableSortMode(input.props['sort-mode'] ?? input.props.sortMode ?? sortDescriptor.mode)
   const pinMode = normalizeComponentSFCTableColumnPinMode(input.props['column-pin'] ?? input.props.columnPin ?? pinDescriptor.mode)
+  const tableId = normalizeText(input.props.id ?? input.props.tableId ?? input.attrs.id, '')
 
   return input.h('div', {
     ...input.attrs,
@@ -183,6 +185,8 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   }, [
     input.h(SFCRevoGridTable as any, {
       boundaryId: input.node.id,
+      tableId,
+      runtimeState: input.context.runtimeState,
       columns,
       source,
       rowKey,
@@ -211,6 +215,14 @@ const SFCRevoGridTable = defineComponent({
     boundaryId: {
       type: String,
       required: true,
+    },
+    tableId: {
+      type: String,
+      default: '',
+    },
+    runtimeState: {
+      type: Object as PropType<SFCVueRuntimeStateController | null>,
+      default: null,
     },
     columns: {
       type: Array as PropType<SFCTableColumn[]>,
@@ -265,9 +277,11 @@ const SFCRevoGridTable = defineComponent({
     const gridRef = ref<{ $el?: SFCRevoGridElement } | SFCRevoGridElement | null>(null)
     const boundaryRegistry = inject(SFCVueBoundaryRegistryKey, null)
     const baseSource = shallowRef(cloneRows(props.source))
-    const sortState = shallowRef(createInitialSortState(props.sortMode, props.defaultSort, props.columns))
+    const tableStateKey = computed(() => props.tableId ? `table:${props.tableId}` : null)
+    const missingTableIdWarned = ref(false)
+    const sortState = shallowRef(resolveInitialSortState())
     const defaultPinState = computed(() => createInitialPinState(props.pinMode, props.defaultPin, props.columns))
-    const pinState = shallowRef(createInitialPinState(props.pinMode, props.defaultPin, props.columns))
+    const pinState = shallowRef(resolveInitialPinState())
     const currentSource = shallowRef(applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode))
     const previousSource = shallowRef(cloneRows(currentSource.value))
     const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
@@ -331,11 +345,11 @@ const SFCRevoGridTable = defineComponent({
         const nextPinSignature = createTablePinSignature(props.pinMode, props.defaultPin, props.columns)
         const pinChanged = previousPinSignature.value !== nextPinSignature
         if (previousSortSignature.value !== nextSortSignature) {
-          sortState.value = createInitialSortState(props.sortMode, props.defaultSort, props.columns)
+          sortState.value = resolveInitialSortState()
           previousSortSignature.value = nextSortSignature
         }
         if (pinChanged) {
-          pinState.value = createInitialPinState(props.pinMode, props.defaultPin, props.columns)
+          pinState.value = resolveInitialPinState()
           previousPinSignature.value = nextPinSignature
         }
 
@@ -370,6 +384,7 @@ const SFCRevoGridTable = defineComponent({
 
     async function commitSortState(nextSortState: ComponentSFCTableSortStateItem[]): Promise<void> {
       sortState.value = nextSortState
+      persistTableState('sort', nextSortState)
       const nextSource = applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode)
       currentSource.value = nextSource
       previousSource.value = cloneRows(nextSource)
@@ -384,8 +399,57 @@ const SFCRevoGridTable = defineComponent({
 
     async function commitPinState(nextPinState: ComponentSFCTableColumnPinStateItem[]): Promise<void> {
       pinState.value = normalizePinState(nextPinState, props.columns, props.pinMode)
+      persistTableState('pin', pinState.value)
       await nextTick()
       await resolveGridElement(gridRef.value)?.refresh?.('all')
+    }
+
+    function resolveInitialSortState(): ComponentSFCTableSortStateItem[] {
+      const fallback = createInitialSortState(props.sortMode, props.defaultSort, props.columns)
+      return normalizePersistedSortState(readTableState('sort', fallback), fallback, props.sortMode, props.columns)
+    }
+
+    function resolveInitialPinState(): ComponentSFCTableColumnPinStateItem[] {
+      const fallback = createInitialPinState(props.pinMode, props.defaultPin, props.columns)
+      return normalizePinState(
+        normalizePersistedPinState(readTableState('pin', fallback), fallback),
+        props.columns,
+        props.pinMode,
+      )
+    }
+
+    function readTableState<T>(section: string, fallback: T): T {
+      if (!props.runtimeState)
+        return fallback
+      const key = tableStateKey.value
+      if (!key) {
+        warnMissingTableId()
+        return fallback
+      }
+
+      return props.runtimeState.get(key, section, fallback)
+    }
+
+    function persistTableState<T>(section: string, value: T): void {
+      if (!props.runtimeState)
+        return
+      const key = tableStateKey.value
+      if (!key) {
+        warnMissingTableId()
+        return
+      }
+
+      props.runtimeState.set(key, section, value)
+    }
+
+    function warnMissingTableId(): void {
+      if (missingTableIdWarned.value)
+        return
+
+      missingTableIdWarned.value = true
+      console.warn('[SFC Table] Runtime state persistence requires stable <Table id="...">.', {
+        boundaryId: props.boundaryId,
+      })
     }
 
     function openColumnMenu(column: SFCTableColumn, columnIndex: number, event: MouseEvent): void {
@@ -419,9 +483,9 @@ const SFCRevoGridTable = defineComponent({
     ): TableColumnCommandContext {
       return {
         surface: 'table-column-header',
-        runtimeId: props.boundaryId,
-        tableRuntimeId: props.boundaryId,
-        tableId: props.boundaryId,
+        runtimeId: props.runtimeState?.runtimeId ?? props.boundaryId,
+        tableRuntimeId: props.runtimeState?.runtimeId ?? props.boundaryId,
+        tableId: props.tableId || props.boundaryId,
         target: tableCommandTarget,
         columnKey: column.key,
         columnIndex,
@@ -831,6 +895,31 @@ function createInitialSortState(
   return sortMode === 'single' ? normalized.slice(0, 1) : normalized
 }
 
+function normalizePersistedSortState(
+  value: unknown,
+  fallback: ComponentSFCTableSortStateItem[],
+  sortMode: ComponentSFCTableSortMode,
+  columns: SFCTableColumn[],
+): ComponentSFCTableSortStateItem[] {
+  if (!Array.isArray(value))
+    return fallback
+
+  const items: ComponentSFCTableSortStateItem[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object')
+      continue
+
+    const key = normalizeText((item as ComponentSFCTableSortStateItem).key, '')
+    const direction = (item as ComponentSFCTableSortStateItem).direction
+    if (!key || (direction !== 'asc' && direction !== 'desc'))
+      continue
+
+    items.push({ key, direction })
+  }
+
+  return createInitialSortState(sortMode, items, columns)
+}
+
 function createInitialPinState(
   pinMode: ComponentSFCTableColumnPinMode,
   defaultPin: ComponentSFCTableColumnPinStateItem[],
@@ -865,6 +954,29 @@ function normalizePinState(
   }
 
   return result
+}
+
+function normalizePersistedPinState(
+  value: unknown,
+  fallback: ComponentSFCTableColumnPinStateItem[],
+): ComponentSFCTableColumnPinStateItem[] {
+  if (!Array.isArray(value))
+    return fallback
+
+  const items: ComponentSFCTableColumnPinStateItem[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object')
+      continue
+
+    const key = normalizeText((item as ComponentSFCTableColumnPinStateItem).key, '')
+    const side = (item as ComponentSFCTableColumnPinStateItem).side
+    if (!key || (side !== 'left' && side !== 'right'))
+      continue
+
+    items.push({ key, side })
+  }
+
+  return items
 }
 
 function setColumnPinState(

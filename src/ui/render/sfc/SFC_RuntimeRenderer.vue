@@ -78,5 +78,6 @@ function destroyBridge(): void {
     :ir="host?.getIr() ?? null"
     :props="renderProps"
     :render-version="renderVersion"
+    :host="host"
   />
 </template>

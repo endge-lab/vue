@@ -1,15 +1,19 @@
+import type { ComponentSFCRuntimeHost } from '@endge/core'
 import type { SFCVueRenderContext, SFCVueRenderIteration } from '@/domain/types/sfc-render.type'
 
 /** Создает root context для одного render pass SFC renderer adapter. */
 export function createSFCVueRenderContext(
   props: Record<string, unknown> | undefined,
   renderVersion = 0,
+  host: ComponentSFCRuntimeHost | null = null,
 ): SFCVueRenderContext {
   return {
     props: props ?? {},
     locals: {},
     iteration: null,
     renderVersion,
+    host,
+    runtimeState: (host as any)?.runtimeState ?? null,
   }
 }
 
@@ -27,5 +31,7 @@ export function extendSFCVueRenderContext(
     },
     iteration,
     renderVersion: context.renderVersion,
+    host: context.host,
+    runtimeState: context.runtimeState,
   }
 }

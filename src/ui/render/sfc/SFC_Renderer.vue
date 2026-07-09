@@ -9,6 +9,7 @@ const props = defineProps<SFCVueRenderAdapterProps>()
 const context = computed(() => createSFCVueRenderContext(
   props.props,
   props.renderVersion ?? 0,
+  props.host ?? null,
 ))
 
 const RenderRoot = defineComponent({

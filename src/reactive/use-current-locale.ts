@@ -3,7 +3,7 @@ import { onScopeDispose, ref } from 'vue'
 
 /**
  * Текущая локаль (Endge.context.currentLocale).
- * Мок: en | ru. Синхронизируется с localStorage через Endge.context.
+ * Список доступных локалей задается Endge.workspace. Синхронизируется с localStorage через Endge.context.
  */
 export function useCurrentLocale() {
   const context = Endge.context
