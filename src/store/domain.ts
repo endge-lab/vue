@@ -94,6 +94,9 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
   // Словари переводов (коллекция i18n-bundles в Payload)
   const i18nBundles = computed(() => domain.value.getI18nBundles())
 
+  // Профили авторизации (коллекция auth-profiles в Payload)
+  const authProfiles = computed(() => domain.value.getAuthProfiles())
+
   // Ссылка на реактивное хранилище
   const storage = ref(Endge.store.getStates())
 
@@ -139,6 +142,7 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
     styles,
     vocabs,
     i18nBundles,
+    authProfiles,
     events,
   }
 })
