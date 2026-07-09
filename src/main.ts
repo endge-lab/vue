@@ -15,6 +15,8 @@ export { default as EndgeAppHelperMenu } from '@/ui/layout/EndgeAppHelperMenu.vu
 export { default as EndgeShell } from '@/ui/layout/EndgeShell.vue'
 export { default as EndgeView } from '@/ui/layout/EndgeView.vue'
 export { default as EndgePage } from '@/ui/render/entities/EndgePage.vue'
+export { default as EndgeContextMenuRoot } from '@/ui/overlay/EndgeContextMenuRoot.vue'
+export * from '@/ui/overlay/context-menu-manager'
 
 export * from '@/ui/render/dsl-jsx/JSXRender_Base'
 export * from '@/ui/render/dsl-jsx/JSXRender_Base_Event'

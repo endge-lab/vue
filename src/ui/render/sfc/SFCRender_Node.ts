@@ -120,6 +120,9 @@ function getSFCElementRenderer(
       return SFCRender_Table
     case 'Column':
     case 'Cell':
+    case 'ColumnMenu':
+    case 'MenuItem':
+    case 'MenuSeparator':
       return SFCRender_Structural
   }
 }

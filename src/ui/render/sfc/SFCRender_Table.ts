@@ -1,14 +1,26 @@
 import RevoGrid, { VGridVueTemplate } from '@revolist/vue3-datagrid'
 import type {
+  ComponentSFCTableColumnMenuDescriptor,
   ComponentSFCTableSortComparator,
   ComponentSFCTableSortDirection,
   ComponentSFCTableSortMode,
   ComponentSFCTableSortStateItem,
+  ContextMenuDescriptor,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
   RuntimeBoundaryPatch,
+  TableColumnCommandContext,
+  TableColumnSortState,
+  TableRuntimeCommandTarget,
+  TableSortDirection,
 } from '@endge/core'
-import { normalizeComponentSFCTableSort, normalizeComponentSFCTableSortMode } from '@endge/core'
+import {
+  Endge,
+  normalizeComponentSFCTableColumnMenu,
+  normalizeComponentSFCTableSort,
+  normalizeComponentSFCTableSortMode,
+  TABLE_RUNTIME_COMMAND_IDS,
+} from '@endge/core'
 import type { PropType } from 'vue'
 import { computed, defineComponent, h as vueH, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 
@@ -22,6 +34,7 @@ import { extendSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
 import { evaluateSFCProps, evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
 import { renderSFCNodes } from '@/ui/render/sfc/SFCRender_Node'
 import { SFCVueBoundaryRegistryKey } from '@/ui/render/sfc/SFCRender_BoundaryRegistry'
+import { closeEndgeContextMenu, openEndgeContextMenu } from '@/ui/overlay/context-menu-manager'
 
 interface SFCTableColumn {
   key: string
@@ -72,12 +85,46 @@ const textCollator = new Intl.Collator(undefined, {
   numeric: false,
   sensitivity: 'base',
 })
+const DEFAULT_TABLE_COLUMN_MENU: ContextMenuDescriptor = {
+  kind: 'context-menu',
+  items: [
+    {
+      kind: 'item',
+      id: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnAsc,
+      label: 'Сортировать по возрастанию',
+      command: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnAsc,
+    },
+    {
+      kind: 'item',
+      id: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnDesc,
+      label: 'Сортировать по убыванию',
+      command: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnDesc,
+    },
+    {
+      kind: 'item',
+      id: TABLE_RUNTIME_COMMAND_IDS.sortClearColumn,
+      label: 'Сбросить сортировку колонки',
+      command: TABLE_RUNTIME_COMMAND_IDS.sortClearColumn,
+    },
+    {
+      kind: 'separator',
+      id: 'sort-separator',
+    },
+    {
+      kind: 'item',
+      id: TABLE_RUNTIME_COMMAND_IDS.sortClearAll,
+      label: 'Сбросить все сортировки',
+      command: TABLE_RUNTIME_COMMAND_IDS.sortClearAll,
+    },
+  ],
+}
 
 /** Рендерит SFC Table primitive через RevoGrid, не раскрывая RevoGrid в SFC-синтаксис. */
 export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const rows = normalizeRows(input.props.rows)
   const rowKey = normalizeText(input.props['row-key'] ?? input.props.rowKey, 'id')
   const sortDescriptor = normalizeComponentSFCTableSort(input.node)
+  const columnMenuDescriptor = normalizeComponentSFCTableColumnMenu(input.node)
   const columns = collectTableColumns(input.node, input.context, sortDescriptor)
   const source = rows.map(row => normalizeRowSnapshot(row, rowKey))
   const sortMode = normalizeComponentSFCTableSortMode(input.props['sort-mode'] ?? input.props.sortMode ?? sortDescriptor.mode)
@@ -98,6 +145,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       source,
       rowKey,
       sortMode,
+      columnMenu: columnMenuDescriptor,
       defaultSort: sortDescriptor.defaultSort,
       rowSize: normalizeNumber(input.props.rowSize, 40),
       theme: normalizeText(input.props.theme, 'compact'),
@@ -136,6 +184,10 @@ const SFCRevoGridTable = defineComponent({
       type: String as PropType<ComponentSFCTableSortMode>,
       required: true,
     },
+    columnMenu: {
+      type: Object as PropType<ComponentSFCTableColumnMenuDescriptor>,
+      required: true,
+    },
     defaultSort: {
       type: Array as PropType<ComponentSFCTableSortStateItem[]>,
       required: true,
@@ -166,6 +218,17 @@ const SFCRevoGridTable = defineComponent({
     const previousSource = shallowRef(cloneRows(currentSource.value))
     const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
     const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
+    const tableCommandTarget: TableRuntimeCommandTarget = {
+      setColumnSort: async (columnKey, direction) => {
+        await commitSortState(setColumnSortState(sortState.value, columnKey, direction, props.sortMode, props.columns))
+      },
+      clearColumnSort: async (columnKey) => {
+        await commitSortState(sortState.value.filter(item => item.key !== columnKey))
+      },
+      clearAllSort: async () => {
+        await commitSortState([])
+      },
+    }
 
     const revoColumns = computed(() => props.columns.map((column, columnIndex) => {
       return createRevoColumn(
@@ -173,6 +236,8 @@ const SFCRevoGridTable = defineComponent({
         columnIndex,
         getSortMeta(column.key, sortState.value),
         (event?: MouseEvent) => toggleColumnSort(column, event),
+        (event: MouseEvent) => openColumnMenu(column, columnIndex, event),
+        hasColumnMenu(column),
         (h, cellProps) => {
           return props.renderCell({
             h,
@@ -189,6 +254,7 @@ const SFCRevoGridTable = defineComponent({
     })
 
     onBeforeUnmount(() => {
+      closeEndgeContextMenu(props.boundaryId)
       unregisterBoundary?.()
     })
 
@@ -226,7 +292,11 @@ const SFCRevoGridTable = defineComponent({
       if (!column.sort?.sortable || props.sortMode === 'disabled' || props.sortMode === 'fixed')
         return
 
-      sortState.value = toggleSortState(sortState.value, column.key, props.sortMode)
+      await commitSortState(toggleSortState(sortState.value, column.key, props.sortMode))
+    }
+
+    async function commitSortState(nextSortState: ComponentSFCTableSortStateItem[]): Promise<void> {
+      sortState.value = nextSortState
       const nextSource = applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode)
       currentSource.value = nextSource
       previousSource.value = cloneRows(nextSource)
@@ -237,6 +307,68 @@ const SFCRevoGridTable = defineComponent({
         grid.source = nextSource
         await grid.refresh?.('all')
       }
+    }
+
+    function openColumnMenu(column: SFCTableColumn, columnIndex: number, event: MouseEvent): void {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const menu = resolveColumnMenu(column)
+      if (!menu) {
+        closeEndgeContextMenu(props.boundaryId)
+        return
+      }
+
+      const context = createColumnCommandContext(column, columnIndex)
+      if (!hasExecutableMenuItem(menu, context)) {
+        closeEndgeContextMenu(props.boundaryId)
+        return
+      }
+
+      openEndgeContextMenu({
+        ownerId: props.boundaryId,
+        x: event.clientX,
+        y: event.clientY,
+        menu,
+        context,
+      })
+    }
+
+    function createColumnCommandContext(
+      column: SFCTableColumn,
+      columnIndex: number,
+    ): TableColumnCommandContext {
+      return {
+        surface: 'table-column-header',
+        runtimeId: props.boundaryId,
+        tableRuntimeId: props.boundaryId,
+        tableId: props.boundaryId,
+        target: tableCommandTarget,
+        columnKey: column.key,
+        columnIndex,
+        pinState: 'none',
+        sortable: column.sort?.sortable === true,
+        sortMode: props.sortMode,
+        sortState: toTableColumnSortState(getSortMeta(column.key, sortState.value)),
+        activeSortCount: sortState.value.length,
+      }
+    }
+
+    function hasColumnMenu(column: SFCTableColumn): boolean {
+      return resolveColumnMenu(column) != null
+    }
+
+    function resolveColumnMenu(column: SFCTableColumn): ContextMenuDescriptor | null {
+      if (props.columnMenu.mode === 'disabled')
+        return null
+
+      if (props.columnMenu.mode === 'inline')
+        return props.columnMenu.menu
+
+      if (column.sort?.sortable)
+        return DEFAULT_TABLE_COLUMN_MENU
+
+      return null
     }
 
     async function applyRuntimePatch(patch: RuntimeBoundaryPatch): Promise<boolean> {
@@ -341,7 +473,7 @@ function resolveCellNodes(columnNode: RComponentSFC_IR_ElementNode): RComponentS
     .filter(isElementNode)
     .find(node => node.tag === 'Cell')
 
-  return cell?.children ?? columnNode.children
+  return (cell?.children ?? columnNode.children).filter(node => !isTableMenuNode(node))
 }
 
 function normalizeColumnKey(
@@ -366,6 +498,8 @@ function createRevoColumn(
   columnIndex: number,
   sortMeta: SFCTableSortMeta,
   onSortClick: (event?: MouseEvent) => void,
+  onMenuOpen: (event: MouseEvent) => void,
+  hasMenu: boolean,
   renderCell: (h: SFCVueRenderH, cellProps: Record<string, unknown>) => ReturnType<SFCVueRenderH>,
 ): Record<string, unknown> {
   return {
@@ -384,6 +518,8 @@ function createRevoColumn(
       sortDirection: sortMeta.direction,
       sortIndex: sortMeta.index,
       onSortClick,
+      onMenuOpen,
+      hasMenu,
     }),
     cellTemplate: (cellH: SFCVueRenderH, cellProps: Record<string, unknown>) => renderCell(cellH, cellProps),
   }
@@ -416,6 +552,14 @@ const SFCRevoGridColumnHeader = defineComponent({
       type: Function as PropType<(event?: MouseEvent) => void>,
       default: undefined,
     },
+    onMenuOpen: {
+      type: Function as PropType<(event: MouseEvent) => void>,
+      default: undefined,
+    },
+    hasMenu: {
+      type: Boolean,
+      default: false,
+    },
   },
   setup(props) {
     function handleClick(event: MouseEvent): void {
@@ -425,6 +569,15 @@ const SFCRevoGridColumnHeader = defineComponent({
       event.preventDefault()
       event.stopPropagation()
       props.onSortClick?.(event)
+    }
+
+    function handleMenuOpen(event: MouseEvent): void {
+      if (!props.hasMenu)
+        return
+
+      event.preventDefault()
+      event.stopPropagation()
+      props.onMenuOpen?.(event)
     }
 
     return () => vueH('div', {
@@ -449,6 +602,7 @@ const SFCRevoGridColumnHeader = defineComponent({
         userSelect: 'none',
       },
       onClick: handleClick,
+      onContextmenu: handleMenuOpen,
       onKeydown: (event: KeyboardEvent) => {
         if (event.key === 'Enter' || event.key === ' ')
           handleClick(event as unknown as MouseEvent)
@@ -473,6 +627,31 @@ const SFCRevoGridColumnHeader = defineComponent({
             },
           }, `${props.sortDirection.toUpperCase()}${props.sortIndex != null ? props.sortIndex + 1 : ''}`)
         : null,
+      props.hasMenu
+        ? vueH('button', {
+            type: 'button',
+            'aria-label': 'Открыть меню колонки',
+            style: {
+              display: 'inline-flex',
+              flex: '0 0 22px',
+              width: '22px',
+              height: '22px',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: 0,
+              borderRadius: '4px',
+              background: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              font: 'inherit',
+              lineHeight: '1',
+              padding: 0,
+              opacity: '0.72',
+            },
+            onClick: handleMenuOpen,
+            onContextmenu: handleMenuOpen,
+          }, '⋮')
+        : null,
     ])
   },
 })
@@ -487,6 +666,21 @@ function getSortMeta(columnKey: string, sortState: ComponentSFCTableSortStateIte
     direction: sortState[index].direction,
     index,
   }
+}
+
+function toTableColumnSortState(meta: SFCTableSortMeta): TableColumnSortState {
+  return {
+    active: meta.enabled,
+    direction: meta.direction,
+    index: meta.index,
+  }
+}
+
+function hasExecutableMenuItem(
+  menu: ContextMenuDescriptor,
+  context: TableColumnCommandContext,
+): boolean {
+  return menu.items.some(item => item.kind === 'item' && Endge.commands.canExecute(item.command, context))
 }
 
 function createInitialSortState(
@@ -530,6 +724,35 @@ function toggleSortState(
   }
 
   return [...current, { key: columnKey, direction: nextDirection }]
+}
+
+function setColumnSortState(
+  current: ComponentSFCTableSortStateItem[],
+  columnKey: string,
+  direction: TableSortDirection,
+  sortMode: ComponentSFCTableSortMode,
+  columns: SFCTableColumn[],
+): ComponentSFCTableSortStateItem[] {
+  if (sortMode === 'disabled' || sortMode === 'fixed')
+    return current
+
+  const column = columns.find(item => item.key === columnKey)
+  if (!column?.sort?.sortable)
+    return current
+
+  const nextItem: ComponentSFCTableSortStateItem = {
+    key: columnKey,
+    direction,
+  }
+
+  if (sortMode === 'single')
+    return [nextItem]
+
+  const existingIndex = current.findIndex(item => item.key === columnKey)
+  if (existingIndex < 0)
+    return [...current, nextItem]
+
+  return current.map(item => item.key === columnKey ? nextItem : item)
 }
 
 function applyTableSort(
@@ -1007,6 +1230,15 @@ function normalizeCssSize(value: unknown, fallback: string): string {
 
 function isElementNode(node: RComponentSFC_IR_Node): node is RComponentSFC_IR_ElementNode {
   return node.kind === 'element'
+}
+
+function isTableMenuNode(node: RComponentSFC_IR_Node): boolean {
+  return isElementNode(node)
+    && (
+      node.tag === 'ColumnMenu'
+      || node.tag === 'MenuItem'
+      || node.tag === 'MenuSeparator'
+    )
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
