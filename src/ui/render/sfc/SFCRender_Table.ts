@@ -1,5 +1,14 @@
-import RevoGrid from '@revolist/vue3-datagrid'
-import type { RComponentSFC_IR_ElementNode, RComponentSFC_IR_Node, RuntimeBoundaryPatch } from '@endge/core'
+import RevoGrid, { VGridVueTemplate } from '@revolist/vue3-datagrid'
+import type {
+  ComponentSFCTableSortComparator,
+  ComponentSFCTableSortDirection,
+  ComponentSFCTableSortMode,
+  ComponentSFCTableSortStateItem,
+  RComponentSFC_IR_ElementNode,
+  RComponentSFC_IR_Node,
+  RuntimeBoundaryPatch,
+} from '@endge/core'
+import { normalizeComponentSFCTableSort, normalizeComponentSFCTableSortMode } from '@endge/core'
 import type { PropType } from 'vue'
 import { computed, defineComponent, h as vueH, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 
@@ -18,8 +27,15 @@ interface SFCTableColumn {
   key: string
   title: string
   width: number | null
+  sort: SFCTableColumnSort | null
   cellNodes: RComponentSFC_IR_Node[]
   rowDependencies: Set<string>
+}
+
+interface SFCTableColumnSort {
+  sortable: boolean
+  comparator: ComponentSFCTableSortComparator
+  paths: string[]
 }
 
 interface SFCRevoGridElement {
@@ -42,12 +58,29 @@ interface SFCTableCellRenderInput {
   rows: Record<string, unknown>[]
 }
 
+interface SFCTableSortMeta {
+  enabled: boolean
+  direction?: ComponentSFCTableSortDirection
+  index?: number
+}
+
+const naturalCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+})
+const textCollator = new Intl.Collator(undefined, {
+  numeric: false,
+  sensitivity: 'base',
+})
+
 /** Рендерит SFC Table primitive через RevoGrid, не раскрывая RevoGrid в SFC-синтаксис. */
 export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const rows = normalizeRows(input.props.rows)
   const rowKey = normalizeText(input.props['row-key'] ?? input.props.rowKey, 'id')
-  const columns = collectTableColumns(input.node, input.context)
+  const sortDescriptor = normalizeComponentSFCTableSort(input.node)
+  const columns = collectTableColumns(input.node, input.context, sortDescriptor)
   const source = rows.map(row => normalizeRowSnapshot(row, rowKey))
+  const sortMode = normalizeComponentSFCTableSortMode(input.props['sort-mode'] ?? input.props.sortMode ?? sortDescriptor.mode)
 
   return input.h('div', {
     ...input.attrs,
@@ -64,6 +97,8 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       columns,
       source,
       rowKey,
+      sortMode,
+      defaultSort: sortDescriptor.defaultSort,
       rowSize: normalizeNumber(input.props.rowSize, 40),
       theme: normalizeText(input.props.theme, 'compact'),
       renderVersion: input.context.renderVersion,
@@ -97,6 +132,14 @@ const SFCRevoGridTable = defineComponent({
       type: String,
       required: true,
     },
+    sortMode: {
+      type: String as PropType<ComponentSFCTableSortMode>,
+      required: true,
+    },
+    defaultSort: {
+      type: Array as PropType<ComponentSFCTableSortStateItem[]>,
+      required: true,
+    },
     rowSize: {
       type: Number,
       required: true,
@@ -117,19 +160,28 @@ const SFCRevoGridTable = defineComponent({
   setup(props) {
     const gridRef = ref<{ $el?: SFCRevoGridElement } | SFCRevoGridElement | null>(null)
     const boundaryRegistry = inject(SFCVueBoundaryRegistryKey, null)
-    const currentSource = shallowRef(cloneRows(props.source))
-    const previousSource = shallowRef(cloneRows(props.source))
+    const baseSource = shallowRef(cloneRows(props.source))
+    const sortState = shallowRef(createInitialSortState(props.sortMode, props.defaultSort, props.columns))
+    const currentSource = shallowRef(applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode))
+    const previousSource = shallowRef(cloneRows(currentSource.value))
     const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
+    const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
 
     const revoColumns = computed(() => props.columns.map((column, columnIndex) => {
-      return createRevoColumn(column, columnIndex, (h, cellProps) => {
-        return props.renderCell({
-          h,
-          column,
-          cellProps,
-          rows: currentSource.value,
-        })
-      })
+      return createRevoColumn(
+        column,
+        columnIndex,
+        getSortMeta(column.key, sortState.value),
+        (event?: MouseEvent) => toggleColumnSort(column, event),
+        (h, cellProps) => {
+          return props.renderCell({
+            h,
+            column,
+            cellProps,
+            rows: currentSource.value,
+          })
+        },
+      )
     }))
 
     const unregisterBoundary = boundaryRegistry?.register(props.boundaryId, {
@@ -141,9 +193,17 @@ const SFCRevoGridTable = defineComponent({
     })
 
     watch(
-      () => [props.renderVersion, props.source, props.columns] as const,
+      () => [props.renderVersion, props.source, props.columns, props.sortMode, props.defaultSort] as const,
       async () => {
-        const nextSource = cloneRows(props.source)
+        const nextBaseSource = cloneRows(props.source)
+        const nextSortSignature = createTableSortSignature(props.sortMode, props.defaultSort, props.columns)
+        if (previousSortSignature.value !== nextSortSignature) {
+          sortState.value = createInitialSortState(props.sortMode, props.defaultSort, props.columns)
+          previousSortSignature.value = nextSortSignature
+        }
+
+        baseSource.value = nextBaseSource
+        const nextSource = applyTableSort(nextBaseSource, props.columns, sortState.value, props.sortMode)
         currentSource.value = nextSource
         await nextTick()
         await updateGridCells({
@@ -159,18 +219,40 @@ const SFCRevoGridTable = defineComponent({
       },
     )
 
+    async function toggleColumnSort(column: SFCTableColumn, event?: MouseEvent): Promise<void> {
+      event?.preventDefault()
+      event?.stopPropagation()
+
+      if (!column.sort?.sortable || props.sortMode === 'disabled' || props.sortMode === 'fixed')
+        return
+
+      sortState.value = toggleSortState(sortState.value, column.key, props.sortMode)
+      const nextSource = applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode)
+      currentSource.value = nextSource
+      previousSource.value = cloneRows(nextSource)
+
+      await nextTick()
+      const grid = resolveGridElement(gridRef.value)
+      if (grid) {
+        grid.source = nextSource
+        await grid.refresh?.('all')
+      }
+    }
+
     async function applyRuntimePatch(patch: RuntimeBoundaryPatch): Promise<boolean> {
       if (patch.kind !== 'collection-projection-update' || patch.boundaryId !== props.boundaryId)
         return false
       if (patch.itemIndex == null || patch.affectedProjections.length === 0)
         return false
 
-      const nextSource = replaceRowSnapshot(
-        currentSource.value,
+      const nextBaseSource = replaceRowSnapshot(
+        baseSource.value,
         patch.itemIndex,
         patch.itemSnapshot,
         props.rowKey,
       )
+      baseSource.value = nextBaseSource
+      const nextSource = applyTableSort(nextBaseSource, props.columns, sortState.value, props.sortMode)
       currentSource.value = nextSource
       await nextTick()
 
@@ -179,6 +261,12 @@ const SFCRevoGridTable = defineComponent({
         return false
 
       grid.source = nextSource
+
+      if (sortState.value.length > 0) {
+        await grid.refresh?.('all')
+        previousSource.value = cloneRows(nextSource)
+        return true
+      }
 
       for (const projection of patch.affectedProjections) {
         await grid.setDataAt?.({
@@ -214,25 +302,35 @@ const SFCRevoGridTable = defineComponent({
 function collectTableColumns(
   tableNode: RComponentSFC_IR_ElementNode,
   context: SFCVueRenderContext,
+  sortDescriptor: ReturnType<typeof normalizeComponentSFCTableSort>,
 ): SFCTableColumn[] {
   return tableNode.children
     .filter(isElementNode)
     .filter(node => node.tag === 'Column')
-    .map((node, index) => createTableColumn(node, context, index))
+    .map((node, index) => createTableColumn(node, context, index, sortDescriptor))
 }
 
 function createTableColumn(
   columnNode: RComponentSFC_IR_ElementNode,
   context: SFCVueRenderContext,
   index: number,
+  sortDescriptor: ReturnType<typeof normalizeComponentSFCTableSort>,
 ): SFCTableColumn {
   const props = evaluateSFCProps(columnNode.props, context)
   const key = normalizeColumnKey(columnNode, context, props.key, `column_${index}`)
+  const sort = sortDescriptor.columns.find(column => column.key === key) ?? null
 
   return {
     key,
     title: normalizeText(props.title ?? props.name, key),
     width: normalizeOptionalNumber(props.width ?? props.size),
+    sort: sort
+      ? {
+          sortable: sort.sortable,
+          comparator: sort.comparator,
+          paths: [...sort.paths],
+        }
+      : null,
     cellNodes: resolveCellNodes(columnNode),
     rowDependencies: extractRowDependencies(resolveCellNodes(columnNode), key),
   }
@@ -266,17 +364,345 @@ function normalizeColumnKey(
 function createRevoColumn(
   column: SFCTableColumn,
   columnIndex: number,
+  sortMeta: SFCTableSortMeta,
+  onSortClick: (event?: MouseEvent) => void,
   renderCell: (h: SFCVueRenderH, cellProps: Record<string, unknown>) => ReturnType<SFCVueRenderH>,
 ): Record<string, unknown> {
   return {
     prop: column.key,
     name: column.title,
     __sfcColumnIndex: columnIndex,
-    sortable: false,
+    sortable: undefined,
+    order: undefined,
+    cellCompare: undefined,
     autoSize: column.width == null,
     size: column.width ?? 150,
+    columnTemplate: VGridVueTemplate(SFCRevoGridColumnHeader, {
+      title: column.title,
+      isSortable: column.sort?.sortable === true,
+      sortEnabled: sortMeta.enabled,
+      sortDirection: sortMeta.direction,
+      sortIndex: sortMeta.index,
+      onSortClick,
+    }),
     cellTemplate: (cellH: SFCVueRenderH, cellProps: Record<string, unknown>) => renderCell(cellH, cellProps),
   }
+}
+
+const SFCRevoGridColumnHeader = defineComponent({
+  name: 'SFCRevoGridColumnHeader',
+  props: {
+    title: {
+      type: String,
+      required: true,
+    },
+    isSortable: {
+      type: Boolean,
+      default: false,
+    },
+    sortEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    sortDirection: {
+      type: String as PropType<ComponentSFCTableSortDirection | undefined>,
+      default: undefined,
+    },
+    sortIndex: {
+      type: Number,
+      default: undefined,
+    },
+    onSortClick: {
+      type: Function as PropType<(event?: MouseEvent) => void>,
+      default: undefined,
+    },
+  },
+  setup(props) {
+    function handleClick(event: MouseEvent): void {
+      if (!props.isSortable)
+        return
+
+      event.preventDefault()
+      event.stopPropagation()
+      props.onSortClick?.(event)
+    }
+
+    return () => vueH('div', {
+      class: [
+        'endge-sfc-table-header',
+        props.isSortable ? 'endge-sfc-table-header--sortable' : '',
+        props.sortEnabled ? 'endge-sfc-table-header--sorted' : '',
+      ],
+      role: props.isSortable ? 'button' : undefined,
+      tabindex: props.isSortable ? 0 : undefined,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '6px',
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        position: 'relative',
+        cursor: props.isSortable ? 'pointer' : undefined,
+        pointerEvents: 'auto',
+        userSelect: 'none',
+      },
+      onClick: handleClick,
+      onKeydown: (event: KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ')
+          handleClick(event as unknown as MouseEvent)
+      },
+    }, [
+      vueH('span', {
+        style: {
+          display: 'block',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+        },
+      }, `${props.title} \u200e`),
+      props.sortEnabled && props.sortDirection
+        ? vueH('span', {
+            style: {
+              marginLeft: 'auto',
+              fontSize: '11px',
+              lineHeight: '1',
+              opacity: '0.72',
+            },
+          }, `${props.sortDirection.toUpperCase()}${props.sortIndex != null ? props.sortIndex + 1 : ''}`)
+        : null,
+    ])
+  },
+})
+
+function getSortMeta(columnKey: string, sortState: ComponentSFCTableSortStateItem[]): SFCTableSortMeta {
+  const index = sortState.findIndex(item => item.key === columnKey)
+  if (index < 0)
+    return { enabled: false }
+
+  return {
+    enabled: true,
+    direction: sortState[index].direction,
+    index,
+  }
+}
+
+function createInitialSortState(
+  sortMode: ComponentSFCTableSortMode,
+  defaultSort: ComponentSFCTableSortStateItem[],
+  columns: SFCTableColumn[],
+): ComponentSFCTableSortStateItem[] {
+  if (sortMode === 'disabled')
+    return []
+
+  const sortableKeys = new Set(columns.filter(column => column.sort != null).map(column => column.key))
+  const normalized = defaultSort.filter(item => sortableKeys.has(item.key))
+
+  return sortMode === 'single' ? normalized.slice(0, 1) : normalized
+}
+
+function toggleSortState(
+  current: ComponentSFCTableSortStateItem[],
+  columnKey: string,
+  sortMode: ComponentSFCTableSortMode,
+): ComponentSFCTableSortStateItem[] {
+  if (sortMode === 'disabled' || sortMode === 'fixed')
+    return current
+
+  const existingIndex = current.findIndex(item => item.key === columnKey)
+  const existing = existingIndex >= 0 ? current[existingIndex] : null
+  const nextDirection: ComponentSFCTableSortDirection | null = !existing
+    ? 'asc'
+    : existing.direction === 'asc' ? 'desc' : null
+
+  if (sortMode === 'single')
+    return nextDirection ? [{ key: columnKey, direction: nextDirection }] : []
+
+  if (nextDirection == null)
+    return current.filter(item => item.key !== columnKey)
+
+  if (existingIndex >= 0) {
+    return current.map(item => item.key === columnKey
+      ? { ...item, direction: nextDirection }
+      : item)
+  }
+
+  return [...current, { key: columnKey, direction: nextDirection }]
+}
+
+function applyTableSort(
+  rows: Record<string, unknown>[],
+  columns: SFCTableColumn[],
+  sortState: ComponentSFCTableSortStateItem[],
+  sortMode: ComponentSFCTableSortMode,
+): Record<string, unknown>[] {
+  if (sortMode === 'disabled' || sortState.length === 0)
+    return cloneRows(rows)
+
+  const columnsByKey = new Map(columns.map(column => [column.key, column]))
+  const rules = sortState
+    .map(item => {
+      const column = columnsByKey.get(item.key)
+      return column?.sort
+        ? { ...item, sort: column.sort }
+        : null
+    })
+    .filter((item): item is ComponentSFCTableSortStateItem & { sort: SFCTableColumnSort } => item != null)
+
+  if (rules.length === 0)
+    return cloneRows(rows)
+
+  return rows
+    .map((row, index) => ({ row: { ...row }, index }))
+    .sort((a, b) => {
+      for (const rule of rules) {
+        const result = compareRows(a.row, b.row, rule.sort)
+        if (result !== 0)
+          return rule.direction === 'desc' ? -result : result
+      }
+
+      return a.index - b.index
+    })
+    .map(item => item.row)
+}
+
+function compareRows(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  sort: SFCTableColumnSort,
+): number {
+  for (const path of sort.paths) {
+    const result = compareValues(readRowPath(left, path), readRowPath(right, path), sort.comparator)
+    if (result !== 0)
+      return result
+  }
+
+  return 0
+}
+
+function compareValues(
+  left: unknown,
+  right: unknown,
+  comparator: ComponentSFCTableSortComparator,
+): number {
+  const empty = compareEmpty(left, right)
+  if (empty != null)
+    return empty
+
+  if (comparator === 'number')
+    return compareNumbers(left, right)
+  if (comparator === 'date')
+    return compareDates(left, right)
+  if (comparator === 'time')
+    return compareTimes(left, right)
+  if (comparator === 'boolean')
+    return compareBooleans(left, right)
+  if (comparator === 'text')
+    return compareText(left, right)
+
+  return compareNatural(left, right)
+}
+
+function compareEmpty(left: unknown, right: unknown): number | null {
+  const leftEmpty = left == null || left === ''
+  const rightEmpty = right == null || right === ''
+  if (leftEmpty && rightEmpty)
+    return 0
+  if (leftEmpty)
+    return 1
+  if (rightEmpty)
+    return -1
+  return null
+}
+
+function compareNatural(left: unknown, right: unknown): number {
+  return naturalCollator.compare(String(left), String(right))
+}
+
+function compareText(left: unknown, right: unknown): number {
+  return textCollator.compare(String(left), String(right))
+}
+
+function compareNumbers(left: unknown, right: unknown): number {
+  const a = Number(left)
+  const b = Number(right)
+  if (!Number.isFinite(a) && !Number.isFinite(b))
+    return compareNatural(left, right)
+  if (!Number.isFinite(a))
+    return 1
+  if (!Number.isFinite(b))
+    return -1
+  return a - b
+}
+
+function compareDates(left: unknown, right: unknown): number {
+  return compareTimestamps(parseDateTimestamp(left), parseDateTimestamp(right), left, right)
+}
+
+function compareTimes(left: unknown, right: unknown): number {
+  return compareTimestamps(parseTimeTimestamp(left), parseTimeTimestamp(right), left, right)
+}
+
+function compareTimestamps(
+  left: number,
+  right: number,
+  rawLeft: unknown,
+  rawRight: unknown,
+): number {
+  if (!Number.isFinite(left) && !Number.isFinite(right))
+    return compareNatural(rawLeft, rawRight)
+  if (!Number.isFinite(left))
+    return 1
+  if (!Number.isFinite(right))
+    return -1
+  return left - right
+}
+
+function compareBooleans(left: unknown, right: unknown): number {
+  return Number(Boolean(left)) - Number(Boolean(right))
+}
+
+function parseDateTimestamp(value: unknown): number {
+  if (value instanceof Date)
+    return value.getTime()
+  return Date.parse(String(value))
+}
+
+function parseTimeTimestamp(value: unknown): number {
+  if (value instanceof Date)
+    return value.getHours() * 60 + value.getMinutes()
+
+  const source = String(value ?? '').trim()
+  const timeMatch = source.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+  if (timeMatch) {
+    const hours = Number(timeMatch[1])
+    const minutes = Number(timeMatch[2])
+    const seconds = Number(timeMatch[3] ?? 0)
+    if (Number.isFinite(hours) && Number.isFinite(minutes) && Number.isFinite(seconds))
+      return hours * 3600 + minutes * 60 + seconds
+  }
+
+  const parsed = Date.parse(source)
+  if (Number.isFinite(parsed)) {
+    const date = new Date(parsed)
+    return date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
+  }
+
+  return Number.NaN
+}
+
+function readRowPath(row: Record<string, unknown>, path: string): unknown {
+  const segments = String(path ?? '').split('.').map(part => part.trim()).filter(Boolean)
+  if (segments.length === 0)
+    return undefined
+
+  return segments.reduce<unknown>((current, segment) => {
+    if (current == null || typeof current !== 'object')
+      return undefined
+    return (current as Record<string, unknown>)[segment]
+  }, row)
 }
 
 function renderTableCell(input: SFCTableCellRenderInput & {
@@ -459,8 +885,20 @@ function collectRowDependenciesFromSource(source: string, result: Set<string>, c
 
 function createColumnsSignature(columns: SFCTableColumn[]): string {
   return columns
-    .map(column => `${column.key}:${column.title}:${column.width ?? ''}`)
+    .map(column => `${column.key}:${column.title}:${column.width ?? ''}:${column.sort?.sortable ?? false}:${column.sort?.comparator ?? ''}:${column.sort?.paths.join(',') ?? ''}`)
     .join('|')
+}
+
+function createTableSortSignature(
+  sortMode: ComponentSFCTableSortMode,
+  defaultSort: ComponentSFCTableSortStateItem[],
+  columns: SFCTableColumn[],
+): string {
+  return [
+    sortMode,
+    defaultSort.map(item => `${item.key}:${item.direction}`).join(','),
+    createColumnsSignature(columns),
+  ].join('|')
 }
 
 function resolveGridElement(value: { $el?: SFCRevoGridElement } | SFCRevoGridElement | null): SFCRevoGridElement | null {
@@ -510,7 +948,12 @@ function replaceRowSnapshot(
     return rows
 
   const result = cloneRows(rows)
-  result[rowIndex] = normalizeRowSnapshot(nextRow, rowKey)
+  const normalized = normalizeRowSnapshot(nextRow, rowKey)
+  const nextRowId = normalized[rowKey]
+  const targetIndex = nextRowId == null
+    ? rowIndex
+    : result.findIndex(row => Object.is(row[rowKey], nextRowId))
+  result[targetIndex >= 0 ? targetIndex : rowIndex] = normalized
   return result
 }
 
