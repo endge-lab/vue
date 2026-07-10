@@ -68,4 +68,3 @@ export { default as ComponentType_Table_ColumnHeader } from '@/ui/render/vue/Com
 export { default as ComponentType_TableV2 } from '@/ui/render/vue/ComponentType_TableV2.vue'
 export { default as ComponentType_TableV3 } from '@/ui/render/vue/ComponentType_TableV3.vue'
 export { default as EndgeComponent } from '@/ui/render/vue/EndgeComponent.vue'
-export { default as MountScenario } from '@/ui/render/vue/MountScenario.vue'

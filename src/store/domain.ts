@@ -31,9 +31,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
   // SFC-компоненты нового API
   const componentSFCs = computed(() => domain.value.getComponentSFCs())
 
-  // Пользовательские сценарии
-  const scenarios = computed(() => domain.value.getScenarios())
-
   // Пользовательские действия
   const actions = computed(() => domain.value.getActions())
 
@@ -54,9 +51,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
 
   // Навигации
   const navigations = computed(() => domain.value.getNavigations())
-
-  // Настройки (профили)
-  const settings = computed(() => domain.value.getSettings())
 
   // Папки редактора
   const folders = computed(() => domain.value.getFolders())
@@ -119,7 +113,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
     queries,
     components,
     componentSFCs,
-    scenarios,
     actions,
     converters,
     integrations,
@@ -127,7 +120,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
     pageTemplates,
     pages,
     navigations,
-    settings,
     folders,
     storage,
     rendersNames,
