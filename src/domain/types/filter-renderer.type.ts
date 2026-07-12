@@ -1,7 +1,7 @@
-import type { FilterRuntimeHost } from '@endge/core'
+import type { CompositionFilterFieldsSlice, FilterRuntimeHost } from '@endge/core'
 
 export interface EndgeFilterRendererProps {
   runtime: FilterRuntimeHost
-  output?: string
+  slice?: CompositionFilterFieldsSlice | null
   readonly?: boolean
 }

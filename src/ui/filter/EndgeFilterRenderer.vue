@@ -10,10 +10,8 @@ const props = defineProps<EndgeFilterRendererProps>()
 const state = ref<Record<string, unknown>>({ ...props.runtime.getState() })
 const refresh = () => { state.value = { ...props.runtime.getState() } }
 const fields = computed<SourceFieldDefinition[]>(() => {
-  if (!props.output)
-    return props.runtime.getFields().filter(field => field.type !== 'Object')
-  const output = props.runtime.getOutput(props.output)
-  return output?.kind === 'controls' ? output.fields.filter(field => field.type !== 'Object') : []
+  const source = props.slice?.fields ?? props.runtime.getFields()
+  return source.filter(field => field.type !== 'Object')
 })
 
 function bind(runtime: EndgeFilterRendererProps['runtime']): void {
