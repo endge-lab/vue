@@ -13,15 +13,19 @@ import { resolveSFCConditionState } from '@/ui/render/sfc/SFCRender_Base'
 import { evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
 import { SFCRender_Badge } from '@/ui/render/sfc/SFCRender_Badge'
 import { SFCRender_Box } from '@/ui/render/sfc/SFCRender_Box'
+import { SFCRender_Checkbox } from '@/ui/render/sfc/SFCRender_Checkbox'
 import { SFCRender_Component } from '@/ui/render/sfc/SFCRender_Component'
 import { SFCRender_DateTime } from '@/ui/render/sfc/SFCRender_DateTime'
 import { SFCRender_Divider } from '@/ui/render/sfc/SFCRender_Divider'
 import { SFCRender_Dot } from '@/ui/render/sfc/SFCRender_Dot'
 import { SFCRender_Flex } from '@/ui/render/sfc/SFCRender_Flex'
 import { SFCRender_Icon } from '@/ui/render/sfc/SFCRender_Icon'
+import { SFCRender_Input } from '@/ui/render/sfc/SFCRender_Input'
 import { SFCRender_Number } from '@/ui/render/sfc/SFCRender_Number'
+import { SFCRender_Select } from '@/ui/render/sfc/SFCRender_Select'
 import { SFCRender_Table } from '@/ui/render/sfc/SFCRender_Table'
 import { SFCRender_Text } from '@/ui/render/sfc/SFCRender_Text'
+import { SFCRender_Textarea } from '@/ui/render/sfc/SFCRender_Textarea'
 
 const SFCRender_Structural: SFCVueRenderFunction = () => null
 
@@ -114,6 +118,14 @@ function getSFCElementRenderer(
       return SFCRender_Flex
     case 'Divider':
       return SFCRender_Divider
+    case 'Input':
+      return SFCRender_Input
+    case 'Textarea':
+      return SFCRender_Textarea
+    case 'Checkbox':
+      return SFCRender_Checkbox
+    case 'Select':
+      return SFCRender_Select
     case 'Component':
       return SFCRender_Component
     case 'Table':
