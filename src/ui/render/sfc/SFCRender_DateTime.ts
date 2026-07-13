@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит дату или время через базовые форматы SFC v1. */
-export const SFCRender_DateTime: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_DateTime: SFCVueRenderAdapterFunction = (input) => {
   const value = formatDateTime(input.props.value, input.props.format)
 
   return input.h('time', {
@@ -10,7 +9,7 @@ export const SFCRender_DateTime: SFCVueRenderFunction = SFCRender_Base((input) =
     class: ['endge-sfc-datetime', input.props.class],
     datetime: input.props.value == null ? undefined : String(input.props.value),
   }, value)
-})
+}
 
 function formatDateTime(value: unknown, format: unknown): string {
   if (value == null) return ''

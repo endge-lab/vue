@@ -1,5 +1,6 @@
 import type {
   ComponentSFCRuntimeHost,
+  EndgeSFCRenderAdapterKey,
   RComponentSFC_IR,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
@@ -10,6 +11,7 @@ import type {
   RuntimeHostRaphInputBinding,
   RuntimeHostRaphInputSource,
   RuntimeBoundaryPatch,
+  UIRenderAdapter,
 } from '@endge/core'
 import type { h as VueH, VNode } from 'vue'
 
@@ -114,6 +116,31 @@ export interface SFCVueRenderElementInput {
   renderChildren: (context: SFCVueRenderContext) => SFCVueRenderListResult
   props: Record<string, unknown>
   attrs: Record<string, unknown>
+}
+
+/** Нормализованный вход visual primitive renderer-а без compiler/runtime деталей. */
+export type SFCVueRenderAdapterElementInput = Pick<
+  SFCVueRenderElementInput,
+  'h' | 'children' | 'props' | 'attrs'
+>
+
+/** Renderer одной visual primitive внутри Vue adapter-а. */
+export type SFCVueRenderAdapterFunction = (
+  input: SFCVueRenderAdapterElementInput,
+) => SFCVueRenderResult
+
+/** Полный набор visual primitive renderers Vue adapter-а. */
+export type SFCVueRenderAdapterRendererMap = Record<
+  EndgeSFCRenderAdapterKey,
+  SFCVueRenderAdapterFunction
+>
+
+/** Типизированный SFC adapter для Vue render engine. */
+export interface SFCVueRenderAdapter extends UIRenderAdapter<SFCVueRenderAdapterFunction> {
+  protocol: 'endge-sfc'
+  protocolVersion: 1
+  renderer: 'vue'
+  renderers: SFCVueRenderAdapterRendererMap
 }
 
 /** Функция renderer-а одного SFC primitive-тега. */

@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит icon placeholder без зависимости от конкретной icon library. */
-export const SFCRender_Icon: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Icon: SFCVueRenderAdapterFunction = (input) => {
   const name = input.props.name ?? input.props.icon ?? ''
 
   return input.h('span', {
@@ -11,4 +10,4 @@ export const SFCRender_Icon: SFCVueRenderFunction = SFCRender_Base((input) => {
     'aria-label': name ? String(name) : undefined,
     role: 'img',
   }, String(name))
-})
+}

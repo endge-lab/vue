@@ -1,33 +1,49 @@
 import type {
+  EndgeSFCRenderAdapterKey,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
 } from '@endge/core'
+import {
+  ENDGE_SFC_RENDER_ADAPTER_PROTOCOL,
+  ENDGE_SFC_RENDER_ADAPTER_PROTOCOL_VERSION,
+  ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
+  Endge,
+} from '@endge/core'
 import type {
+  SFCVueRenderAdapterFunction,
   SFCVueRenderContext,
   SFCVueRenderFunction,
   SFCVueRenderH,
   SFCVueRenderListResult,
   SFCVueRenderResult,
 } from '@/domain/types/sfc-render.type'
-import { resolveSFCConditionState } from '@/ui/render/sfc/SFCRender_Base'
+import { resolveSFCConditionState, SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
 import { evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
-import { SFCRender_Badge } from '@/ui/render/sfc/SFCRender_Badge'
-import { SFCRender_Box } from '@/ui/render/sfc/SFCRender_Box'
-import { SFCRender_Checkbox } from '@/ui/render/sfc/SFCRender_Checkbox'
 import { SFCRender_Component } from '@/ui/render/sfc/SFCRender_Component'
-import { SFCRender_DateTime } from '@/ui/render/sfc/SFCRender_DateTime'
-import { SFCRender_Divider } from '@/ui/render/sfc/SFCRender_Divider'
-import { SFCRender_Dot } from '@/ui/render/sfc/SFCRender_Dot'
-import { SFCRender_Flex } from '@/ui/render/sfc/SFCRender_Flex'
-import { SFCRender_Icon } from '@/ui/render/sfc/SFCRender_Icon'
-import { SFCRender_Input } from '@/ui/render/sfc/SFCRender_Input'
-import { SFCRender_Number } from '@/ui/render/sfc/SFCRender_Number'
-import { SFCRender_Select } from '@/ui/render/sfc/SFCRender_Select'
 import { SFCRender_Table } from '@/ui/render/sfc/SFCRender_Table'
-import { SFCRender_Text } from '@/ui/render/sfc/SFCRender_Text'
-import { SFCRender_Textarea } from '@/ui/render/sfc/SFCRender_Textarea'
 
 const SFCRender_Structural: SFCVueRenderFunction = () => null
+const SFCRender_Adapter: SFCVueRenderFunction = SFCRender_Base((input) => {
+  const adapter = Endge.uiRegistry.adapters.requireActive<SFCVueRenderAdapterFunction>({
+    protocol: ENDGE_SFC_RENDER_ADAPTER_PROTOCOL,
+    protocolVersion: ENDGE_SFC_RENDER_ADAPTER_PROTOCOL_VERSION,
+    renderer: 'vue',
+    requiredRendererKeys: ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
+  })
+  const renderFn = adapter.renderers[input.node.tag]
+  if (!renderFn) {
+    throw new Error(
+      `[SFCRender_Node] adapter "${adapter.id}" has no renderer for "${input.node.tag}"`,
+    )
+  }
+
+  return renderFn({
+    h: input.h,
+    children: input.children,
+    props: input.props,
+    attrs: input.attrs,
+  })
+})
 
 /** Рендерит список SFC IR узлов с учетом sibling if / else-if / else chain. */
 export function renderSFCNodes(
@@ -99,33 +115,9 @@ function renderSFCElement(
 function getSFCElementRenderer(
   node: RComponentSFC_IR_ElementNode,
 ) {
+  if (isAdapterRenderKey(node.tag)) return SFCRender_Adapter
+
   switch (node.tag) {
-    case 'Text':
-      return SFCRender_Text
-    case 'DateTime':
-      return SFCRender_DateTime
-    case 'Number':
-      return SFCRender_Number
-    case 'Icon':
-      return SFCRender_Icon
-    case 'Badge':
-      return SFCRender_Badge
-    case 'Dot':
-      return SFCRender_Dot
-    case 'Box':
-      return SFCRender_Box
-    case 'Flex':
-      return SFCRender_Flex
-    case 'Divider':
-      return SFCRender_Divider
-    case 'Input':
-      return SFCRender_Input
-    case 'Textarea':
-      return SFCRender_Textarea
-    case 'Checkbox':
-      return SFCRender_Checkbox
-    case 'Select':
-      return SFCRender_Select
     case 'Component':
       return SFCRender_Component
     case 'Table':
@@ -137,6 +129,10 @@ function getSFCElementRenderer(
     case 'MenuSeparator':
       return SFCRender_Structural
   }
+}
+
+function isAdapterRenderKey(tag: RComponentSFC_IR_ElementNode['tag']): tag is EndgeSFCRenderAdapterKey {
+  return (ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS as readonly string[]).includes(tag)
 }
 
 function appendRenderedNode(

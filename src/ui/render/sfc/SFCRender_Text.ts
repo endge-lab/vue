@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит текстовый SFC primitive. */
-export const SFCRender_Text: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Text: SFCVueRenderAdapterFunction = (input) => {
   const content = input.props.value == null
     ? input.children
     : String(input.props.value)
@@ -11,4 +10,4 @@ export const SFCRender_Text: SFCVueRenderFunction = SFCRender_Base((input) => {
     ...input.attrs,
     class: ['endge-sfc-text', input.props.class],
   }, content)
-})
+}

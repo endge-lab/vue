@@ -1,15 +1,14 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит числовое значение SFC primitive. */
-export const SFCRender_Number: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Number: SFCVueRenderAdapterFunction = (input) => {
   const value = formatNumber(input.props.value, input.props)
 
   return input.h('span', {
     ...input.attrs,
     class: ['endge-sfc-number', input.props.class],
   }, value)
-})
+}
 
 function formatNumber(value: unknown, props: Record<string, unknown>): string {
   if (value == null) return ''

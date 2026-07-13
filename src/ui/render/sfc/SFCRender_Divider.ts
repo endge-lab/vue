@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит разделитель SFC primitive. */
-export const SFCRender_Divider: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Divider: SFCVueRenderAdapterFunction = (input) => {
   const vertical = input.props.vertical === true || input.props.orientation === 'vertical'
 
   return input.h('div', {
@@ -18,4 +17,4 @@ export const SFCRender_Divider: SFCVueRenderFunction = SFCRender_Base((input) =>
       opacity: '0.16',
     },
   })
-})
+}

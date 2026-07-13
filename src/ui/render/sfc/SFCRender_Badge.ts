@@ -1,11 +1,10 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит badge primitive с нейтральным tone metadata. */
-export const SFCRender_Badge: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Badge: SFCVueRenderAdapterFunction = (input) => {
   return input.h('span', {
     ...input.attrs,
     class: ['endge-sfc-badge', input.props.class],
     'data-tone': input.props.tone == null ? undefined : String(input.props.tone),
   }, input.children)
-})
+}

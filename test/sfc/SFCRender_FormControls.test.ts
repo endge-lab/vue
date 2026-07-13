@@ -3,13 +3,33 @@ import type {
   RComponentSFC_IR_Tag,
   RComponentSFC_IR_Value,
 } from '@endge/core'
-import { describe, expect, it } from 'vitest'
+import {
+  ENDGE_SFC_RENDER_ADAPTER_PROTOCOL,
+  ENDGE_SFC_RENDER_ADAPTER_PROTOCOL_VERSION,
+  ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
+  Endge,
+} from '@endge/core'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { h, isVNode, type VNode } from 'vue'
 
 import { createSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
 import { renderSFCNode } from '@/ui/render/sfc/SFCRender_Node'
+import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
 
 describe('display-only SFC form controls', () => {
+  beforeAll(() => {
+    if (!Endge.uiRegistry.adapters.has(NativeVueSFCAdapter.id)) {
+      Endge.uiRegistry.adapters.register(NativeVueSFCAdapter)
+    }
+    Endge.uiRegistry.adapters.activate({
+      id: NativeVueSFCAdapter.id,
+      protocol: ENDGE_SFC_RENDER_ADAPTER_PROTOCOL,
+      protocolVersion: ENDGE_SFC_RENDER_ADAPTER_PROTOCOL_VERSION,
+      renderer: 'vue',
+      requiredRendererKeys: ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
+    })
+  })
+
   it.each([
     ['String', 'text', 'SU 1402'],
     ['Number', 'number', 15],

@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит status dot primitive. */
-export const SFCRender_Dot: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Dot: SFCVueRenderAdapterFunction = (input) => {
   const size = Number(input.props.size ?? 8)
 
   return input.h('span', {
@@ -17,4 +16,4 @@ export const SFCRender_Dot: SFCVueRenderFunction = SFCRender_Base((input) => {
       borderRadius: '999px',
     },
   })
-})
+}

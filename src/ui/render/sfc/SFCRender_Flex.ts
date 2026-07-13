@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит flex-контейнер SFC primitive. */
-export const SFCRender_Flex: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Flex: SFCVueRenderAdapterFunction = (input) => {
   const isColumn = input.props.col === true || input.props.direction === 'column'
   const gap = normalizeGap(input.props.gap)
 
@@ -19,7 +18,7 @@ export const SFCRender_Flex: SFCVueRenderFunction = SFCRender_Base((input) => {
       flexWrap: input.props.wrap === true ? 'wrap' : undefined,
     },
   }, input.children)
-})
+}
 
 function normalizeGap(value: unknown): string | undefined {
   if (value == null || value === false) return undefined

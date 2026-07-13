@@ -1,10 +1,9 @@
 import type { SourceFieldOption } from '@endge/core'
 
-import type { SFCVueRenderFunction, SFCVueRenderH } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction, SFCVueRenderH } from '@/domain/types/sfc-render.type'
 
 /** Рендерит одиночный или множественный display-only select. */
-export const SFCRender_Select: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Select: SFCVueRenderAdapterFunction = (input) => {
   const multiple = input.props.multiple === true
   const options = normalizeOptions(input.props.options)
   const selectedValues = normalizeSelectedValues(input.props.value, multiple)
@@ -29,7 +28,7 @@ export const SFCRender_Select: SFCVueRenderFunction = SFCRender_Base((input) => 
     readonly: input.props.readonly === true,
     disabled: input.props.disabled === true,
   }, optionNodes)
-})
+}
 
 function normalizeOptions(value: unknown): SourceFieldOption[] {
   if (!Array.isArray(value))

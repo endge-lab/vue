@@ -1,10 +1,9 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит базовый блочный контейнер SFC. */
-export const SFCRender_Box: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Box: SFCVueRenderAdapterFunction = (input) => {
   return input.h('div', {
     ...input.attrs,
     class: ['endge-sfc-box', input.props.class],
   }, input.children)
-})
+}

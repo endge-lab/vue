@@ -1,8 +1,7 @@
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 /** Рендерит display-only checkbox с необязательной подписью. */
-export const SFCRender_Checkbox: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Checkbox: SFCVueRenderAdapterFunction = (input) => {
   const checkbox = input.h('input', {
     class: 'endge-sfc-checkbox',
     type: 'checkbox',
@@ -21,4 +20,4 @@ export const SFCRender_Checkbox: SFCVueRenderFunction = SFCRender_Base((input) =
       ? []
       : [input.h('span', { class: 'endge-sfc-checkbox-label' }, String(label))]),
   ])
-})
+}

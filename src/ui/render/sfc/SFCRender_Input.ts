@@ -1,13 +1,12 @@
 import type { SourceFieldType } from '@endge/core'
 import { isoToDateInput, isoToDateTimeLocalInput, timeToTimeInput } from '@endge/utils'
 
-import type { SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
-import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
+import type { SFCVueRenderAdapterFunction } from '@/domain/types/sfc-render.type'
 
 type SFCInputType = Extract<SourceFieldType, 'String' | 'Number' | 'Date' | 'Time' | 'DateTime'>
 
 /** Рендерит однострочный display-only input без обратной связи с runtime. */
-export const SFCRender_Input: SFCVueRenderFunction = SFCRender_Base((input) => {
+export const SFCRender_Input: SFCVueRenderAdapterFunction = (input) => {
   const inputType = normalizeInputType(input.props.type)
 
   return input.h('input', {
@@ -22,7 +21,7 @@ export const SFCRender_Input: SFCVueRenderFunction = SFCRender_Base((input) => {
     readonly: input.props.readonly === true,
     disabled: input.props.disabled === true,
   })
-})
+}
 
 function normalizeInputType(value: unknown): SFCInputType {
   if (value === 'Number' || value === 'Date' || value === 'Time' || value === 'DateTime')

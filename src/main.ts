@@ -55,6 +55,7 @@ export * from '@/ui/render/sfc/SFCRender_Table'
 export * from '@/ui/render/sfc/SFCRender_Text'
 export * from '@/ui/render/sfc/SFCRender_Textarea'
 export * from '@/model/render/sfc/SFCVueRuntimeBridge'
+export * from '@/model/render/sfc/native-vue-sfc-adapter'
 export { default as SFC_Renderer } from '@/ui/render/sfc/SFC_Renderer.vue'
 export { default as SFC_RuntimeRenderer } from '@/ui/render/sfc/SFC_RuntimeRenderer.vue'
 
