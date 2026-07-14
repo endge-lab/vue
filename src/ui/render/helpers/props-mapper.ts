@@ -1,6 +1,6 @@
 // src/ui/render/dsl-jsx/shared/prop-mapper.ts
 import type { JSXComponentProps } from '@endge/core'
-import { Endge } from '@endge/core'
+import { resolveLegacyValue } from '@/ui/render/helpers/legacy-expression-stub'
 
 /**
  * Тип для одной Vue-директивы/атрибута (фрагмент AST)
@@ -24,17 +24,8 @@ export type NodeAttr = NodeAttrStatic | NodeAttrBind
  */
 export type EvalFn = (expr: string, props: JSXComponentProps) => any
 
-export const defaultEval: EvalFn = (expr, props) => {
-  try {
-    return Endge.script.evaluate(expr, props.scope!, {
-      ...props.comData,
-      Data: { ...props.comData },
-    })
-  } catch (e) {
-    console.warn('[prop-mapper] Evaluate error:', expr, e)
-    return null
-  }
-}
+export const defaultEval: EvalFn = (expr, props) =>
+  resolveLegacyValue(expr, props.comData)
 
 /**
  * Описание одного пропса в спецификации компонента.

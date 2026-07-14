@@ -1,8 +1,9 @@
 import type { VNode } from 'vue'
 import type { JSXComponentProps } from '@endge/core'
-import { Endge } from '@endge/core'
+import { Endge, RuntimeScope } from '@endge/core'
 import ComponentType_DSL from '@/ui/render/ts/ComponentType_DSL'
 import { randomString } from '@endge/utils'
+import { resolveLegacyValue } from '@/ui/render/helpers/legacy-expression-stub'
 
 const fn = (
   h: (...args: any[]) => VNode,
@@ -42,26 +43,18 @@ const fn = (
       prop.arg?.type === 4 &&
       prop.exp?.type === 4
     ) {
-      // Вычисляем значение выражения в контексте родительского scope
       const expr = prop.exp.content.trim()
-      const value = Endge.script.evaluate(expr, props.scope, {
-        ...props.comData,
-        Data: {
-          all: props.allData,
-          ...props.comData,
-        },
-      })
+      const value = resolveLegacyValue(expr, props.comData)
       localComData[prop.arg.content] = value
     }
   }
 
   // Создаем изолированный scope для компонента
   const scopeId = `component-scope-${randomString(5)}`
-  const scope = Endge.script.getScope(scopeId, props.scope)
+  const scope = new RuntimeScope(scopeId, props.scope)
 
   return ComponentType_DSL(h, {
     model: targetComponent,
-    allData: props.allData,
     comData: localComData,
     scope: scope,
   })

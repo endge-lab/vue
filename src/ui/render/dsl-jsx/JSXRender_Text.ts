@@ -1,7 +1,7 @@
 import type { VNode } from 'vue'
 import type { JSXComponentProps } from '@endge/core'
 import { JSXRender_Base } from '@/ui/render/dsl-jsx/JSXRender_Base'
-import { Endge } from '@endge/core'
+import { resolveLegacyValue } from '@/ui/render/helpers/legacy-expression-stub'
 import {
   createPropApplier,
   coerceBool,
@@ -118,16 +118,8 @@ const fn = (h: (...args: any[]) => VNode, props: JSXComponentProps): VNode => {
   const children = props.node.children.map((child) => {
     if (child.type === 2 /* TEXT */) return child.content
     if (child.type === 5 /* INTERPOLATION */) {
-      try {
-        const v = Endge.script.evaluate(child.content.content, props.scope!, {
-          ...props.comData,
-          Data: { ...props.comData },
-        })
-        return v != null ? String(v) : ''
-      } catch (e) {
-        console.warn('[Text] interpolation error:', e)
-        return ''
-      }
+      const value = resolveLegacyValue(child.content.content, props.comData)
+      return value != null ? String(value) : ''
     }
     return ''
   })

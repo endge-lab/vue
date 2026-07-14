@@ -5,10 +5,10 @@ import { Prefix } from '@endge/core'
 // import { useTooltipStore } from '@endge/utils'
 import { randomString } from '@endge/utils'
 import type { VNode } from 'vue'
-import type { VNode } from 'vue'
 import { isVNode } from 'vue'
-import type { TemplateChildNode, ElementNode } from '@vue/compiler-dom'
+import type { TemplateChildNode } from '@vue/compiler-dom'
 import { Endge } from '@endge/core'
+import { resolveLegacyValue } from '@/ui/render/helpers/legacy-expression-stub'
 
 /**
  * Middleware: оборачивает VNode тултипом, если указаны tooltip-атрибуты или слот #tooltip
@@ -136,26 +136,12 @@ export function createRenderNode(
 
     // Интерполяция {{ someExpr }}
     if (node.type === 5 /* INTERPOLATION */) {
-      try {
-        const expr = node.content.content.trim()
-        const value = Endge.script.evaluate(expr, scope, {
-          ...props.comData,
-          Data: {
-            all: props.allData,
-            ...props.comData,
-          },
-        })
-
-        if (isVNode(value)) return value
-        if (typeof value === 'string' || typeof value === 'number') {
-          return String(value)
-        }
-
-        return JSON.stringify(value)
-      } catch (e) {
-        console.warn('[DSL]: Ошибка в интерполяции', node.content.content, e)
-        return ''
+      const value = resolveLegacyValue(node.content.content, comData)
+      if (isVNode(value)) return value
+      if (typeof value === 'string' || typeof value === 'number') {
+        return String(value)
       }
+      return value == null ? '' : JSON.stringify(value)
     }
 
     // Простой текст

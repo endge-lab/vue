@@ -4,8 +4,8 @@ import { JSXRender_Base_IfElse } from '@/ui/render/dsl-jsx/JSXRender_Base_IfElse
 import { JSXRender_Base_Styles } from '@/ui/render/dsl-jsx/JSXRender_Base_Styles'
 import { JSXRender_Base_Events } from '@/ui/render/dsl-jsx/JSXRender_Base_Event'
 import { JSXRender_Base_Tooltip } from '@/ui/render/dsl-jsx/JSXRender_Base_Tooltip'
-import { Endge } from '@endge/core'
 import { readForFromNode } from '@/ui/render/dsl-jsx/JSXRender_Base_For'
+import { resolveLegacyValue } from '@/ui/render/helpers/legacy-expression-stub'
 
 /** Разделяем middleware по фазам */
 const PRE_MIDDLEWARE = [
@@ -101,16 +101,7 @@ export function JSXRender_Base(
 
     // --- v-for: вычисляем источник ---
     const { sourceExpr, valueAlias, keyAlias, indexAlias } = forInfo
-    let src: any
-    try {
-      src = Endge.script.evaluate(sourceExpr, scope!, {
-        ...comData,
-        Data: { ...comData },
-      })
-    } catch (e) {
-      console.warn('[DSL]: Ошибка evaluate в v-for:', sourceExpr, e)
-      return null
-    }
+    const src: any = resolveLegacyValue(sourceExpr, comData)
     if (src == null) return null
 
     // --- 2) Итерации: для каждой - свой scope/comData и полный цикл PRE - render - POST ---

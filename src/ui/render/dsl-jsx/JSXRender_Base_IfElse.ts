@@ -1,6 +1,6 @@
-import { Endge } from '@endge/core'
 import type { JSXRenderMiddlewareInput } from '@endge/core'
 import type { VNode } from 'vue'
+import { resolveLegacyValue } from '@/ui/render/helpers/legacy-expression-stub'
 
 /**
  * Глобальный контекст JSX-рендера.
@@ -18,8 +18,6 @@ export function JSXRender_Base_IfElse(
   input: JSXRenderMiddlewareInput,
 ): VNode | null {
   const { node, props, vnode } = input
-  const { scope } = props
-
   const ifDirective = node.props.find(
     (p) => p.type === 7 && p.name === 'if' && p.exp?.type === 4,
   )
@@ -37,21 +35,10 @@ export function JSXRender_Base_IfElse(
   // === v-if ===
   if (ifDirective) {
     const expr = ifDirective.exp.content.trim()
-    try {
-      const result = Endge.script.evaluate(expr, scope!, {
-        ...props.comData,
-        Data: { ...props.comData },
-      })
-
-      JSXRenderContext.chainActive = true
-      JSXRenderContext.lastIfResult = Boolean(result)
-      return JSXRenderContext.lastIfResult ? vnode : null
-    } catch (e) {
-      console.warn('[DSL]: Ошибка в v-if:', expr, e)
-      JSXRenderContext.chainActive = true
-      JSXRenderContext.lastIfResult = false
-      return null
-    }
+    const result = resolveLegacyValue(expr, props.comData)
+    JSXRenderContext.chainActive = true
+    JSXRenderContext.lastIfResult = Boolean(result)
+    return JSXRenderContext.lastIfResult ? vnode : null
   }
 
   // === v-else-if ===
@@ -59,18 +46,9 @@ export function JSXRender_Base_IfElse(
     // Только если предыдущий if/else-if был false
     if (!JSXRenderContext.lastIfResult) {
       const expr = elseIfDirective.exp.content.trim()
-      try {
-        const result = Endge.script.evaluate(expr, scope!, {
-          ...props.comData,
-          Data: { ...props.comData },
-        })
-
-        JSXRenderContext.lastIfResult = Boolean(result)
-        return JSXRenderContext.lastIfResult ? vnode : null
-      } catch (e) {
-        console.warn('[DSL]: Ошибка в v-else-if:', expr, e)
-        return null
-      }
+      const result = resolveLegacyValue(expr, props.comData)
+      JSXRenderContext.lastIfResult = Boolean(result)
+      return JSXRenderContext.lastIfResult ? vnode : null
     } else {
       // предыдущий if/else-if уже сработал
       return null
