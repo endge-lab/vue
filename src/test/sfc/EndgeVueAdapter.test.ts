@@ -1,5 +1,5 @@
-import type { RComponentSFC_IR_ElementNode } from '@endge/core'
-import { DEFAULT_ENDGE_WORKSPACE, Endge } from '@endge/core'
+import type { EndgeWorkspaceDefinition, RComponentSFC_IR_ElementNode } from '@endge/core'
+import { Endge } from '@endge/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { h, isVNode } from 'vue'
 
@@ -9,15 +9,27 @@ import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
 import { createSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
 import { renderSFCNode } from '@/ui/render/sfc/SFCRender_Node'
 
+const TEST_WORKSPACE: EndgeWorkspaceDefinition = {
+  identity: 'workspace-test',
+  displayName: 'Test Workspace',
+  vars: [],
+  locales: [{ code: 'en', displayName: 'English', shortLabel: 'EN' }],
+  defaultLocale: 'en',
+  fallbackLocale: 'en',
+  defaultAuthProfileIdentity: null,
+  sfcAdapterIds: ['native-vue'],
+  defaultSfcAdapterId: 'native-vue',
+}
+
 describe('EndgeVueModule SFC adapter', () => {
   beforeEach(() => {
     Endge.uiRegistry.adapters.reset()
-    Endge.workspace.apply(DEFAULT_ENDGE_WORKSPACE)
+    Endge.workspace.apply(TEST_WORKSPACE)
   })
 
   afterEach(() => {
     Endge.uiRegistry.adapters.reset()
-    Endge.workspace.apply(DEFAULT_ENDGE_WORKSPACE)
+    Endge.workspace.apply(TEST_WORKSPACE)
   })
 
   it('registers and activates native-vue for the default workspace', () => {
@@ -33,7 +45,7 @@ describe('EndgeVueModule SFC adapter', () => {
     const module = new EndgeVueModule()
     module.setup()
     Endge.workspace.apply({
-      ...DEFAULT_ENDGE_WORKSPACE,
+      ...TEST_WORKSPACE,
       sfcAdapterIds: ['customer-aodb'],
       defaultSfcAdapterId: 'customer-aodb',
     })
@@ -59,7 +71,7 @@ describe('EndgeVueModule SFC adapter', () => {
     module.setup()
     Endge.uiRegistry.adapters.register(customerAdapter)
     Endge.workspace.apply({
-      ...DEFAULT_ENDGE_WORKSPACE,
+      ...TEST_WORKSPACE,
       sfcAdapterIds: ['native-vue', 'customer-aodb'],
       defaultSfcAdapterId: 'customer-aodb',
     })
