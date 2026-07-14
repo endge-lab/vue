@@ -1,4 +1,5 @@
 import type { RComponentSFC_IR_Value } from '@endge/core'
+import { DataPath } from '@endge/raph'
 import type { SFCVueRenderBinding, SFCVueRenderContext } from '@/domain/types/sfc-render.type'
 
 /** Вычисляет безопасное подмножество SFC IR value без eval и runtime зависимостей. */
@@ -42,19 +43,41 @@ export function isTruthySFCValue(value: unknown): boolean {
 
 /** Читает путь из locals, затем из props. Отсутствующие поля возвращают undefined. */
 export function readSFCPath(path: string, context: SFCVueRenderContext): unknown {
-  const segments = normalizePath(path)
+  const segments = parseSFCPath(path)
   if (segments.length === 0) return undefined
 
   const [head, ...tail] = segments
-  const root = Object.prototype.hasOwnProperty.call(context.locals, head)
-    ? context.locals[head]
-    : context.props[head]
+  if (!head.key) return undefined
+
+  const root = Object.prototype.hasOwnProperty.call(context.locals, head.key)
+    ? context.locals[head.key]
+    : context.props[head.key]
 
   return tail.reduce<unknown>((current, segment) => {
     if (current == null) return undefined
-    if (typeof current !== 'object' && typeof current !== 'function') return undefined
 
-    return (current as Record<string, unknown>)[segment]
+    if (segment.key != null) {
+      if (typeof current !== 'object' && typeof current !== 'function') return undefined
+      return (current as Record<string, unknown>)[segment.key]
+    }
+
+    if (segment.index != null) {
+      return Array.isArray(current) ? current[segment.index] : undefined
+    }
+
+    if (segment.pkey != null && segment.pval != null) {
+      if (!Array.isArray(current)) return undefined
+
+      return current.find((item) => {
+        if (item == null || typeof item !== 'object') return false
+        return Object.is(
+          (item as Record<string, unknown>)[segment.pkey!],
+          segment.pval,
+        )
+      })
+    }
+
+    return undefined
   }, root)
 }
 
@@ -92,12 +115,23 @@ function isQuotedString(source: string): boolean {
 }
 
 function isSupportedPath(source: string): boolean {
-  return /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(source)
+  const identifier = String.raw`[A-Za-z_$][\w$]*`
+  const selectorKey = String.raw`[A-Za-z_$][\w$-]*`
+  const singleQuoted = String.raw`'(?:\\.|[^'\\])*'`
+  const doubleQuoted = String.raw`"(?:\\.|[^"\\])*"`
+  const selectorValue = String.raw`(?:${singleQuoted}|${doubleQuoted}|\d+)`
+  const dotSegment = String.raw`\.${identifier}`
+  const indexSegment = String.raw`\[\s*\d+\s*\]`
+  const selectorSegment = String.raw`\[\s*${selectorKey}\s*=\s*${selectorValue}\s*\]`
+
+  return new RegExp(
+    String.raw`^${identifier}(?:${dotSegment}|${indexSegment}|${selectorSegment})*$`,
+  ).test(source)
 }
 
-function normalizePath(path: string): string[] {
+function parseSFCPath(path: string): ReturnType<DataPath['segments']> {
   const source = path.trim()
   if (!isSupportedPath(source)) return []
 
-  return source.split('.').filter(Boolean)
+  return DataPath.from(source).segments()
 }
