@@ -32,7 +32,7 @@ describe('EndgeVueModule SFC adapter', () => {
     Endge.workspace.apply(TEST_WORKSPACE)
   })
 
-  it('registers and activates native-vue for the default workspace', () => {
+  it('registers and activates native-vue for the selected workspace', () => {
     const module = new EndgeVueModule()
 
     module.setup()

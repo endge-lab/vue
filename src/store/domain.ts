@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Endge } from '@endge/core'
 import { useSubscribableRef } from '@endge/utils'
 
@@ -93,9 +93,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
   // Профили авторизации (коллекция auth-profiles в Payload)
   const authProfiles = computed(() => domain.value.getAuthProfiles())
 
-  // Ссылка на реактивное хранилище
-  const storage = ref(Endge.store.getStates())
-
   // Имена зарегистрированных названий запросов
   const queriesNames = computed(() => {
     return ['query-gql', 'query-rest']
@@ -118,7 +115,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
     pages,
     navigations,
     folders,
-    storage,
     queriesNames,
     parameters,
     filters,

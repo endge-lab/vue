@@ -39,7 +39,7 @@ function emitEvent(eventName: string, payload?: Record<string, unknown>) {
   if (typeof console !== 'undefined') {
     console.log('[EndgePage] событие жизненного цикла:', eventName, 'page=', props.identity, 'ownerId=', opts.ownerId)
   }
-  Endge.behaviorBindings.runOwnerEvent({
+  Endge.configuration.behaviorBindings.runOwnerEvent({
     ...opts,
     eventName,
     payload,

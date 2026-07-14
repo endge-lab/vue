@@ -878,7 +878,7 @@ function hasExecutableMenuItem(
   menu: ContextMenuDescriptor,
   context: TableColumnCommandContext,
 ): boolean {
-  return menu.items.some(item => item.kind === 'item' && Endge.commands.canExecute(item.command, context))
+  return menu.items.some(item => item.kind === 'item' && Endge.runtime.commands.canExecute(item.command, context))
 }
 
 function createInitialSortState(
