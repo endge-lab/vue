@@ -37,6 +37,8 @@ export interface SFCVueRenderContext {
   renderVersion: number
   host: ComponentSFCRuntimeHost | null
   runtimeState: SFCVueRuntimeStateController | null
+  /** Stack identity текущего component-call для защиты от recursive render cycles. */
+  componentStack: readonly string[]
 }
 
 /** Structural runtime-state controller contract used by Vue render adapters. */

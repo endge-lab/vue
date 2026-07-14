@@ -14,6 +14,7 @@ export function createSFCVueRenderContext(
     renderVersion,
     host,
     runtimeState: (host as any)?.runtimeState ?? null,
+    componentStack: host?.entityIdentity ? [host.entityIdentity] : [],
   }
 }
 
@@ -33,5 +34,6 @@ export function extendSFCVueRenderContext(
     renderVersion: context.renderVersion,
     host: context.host,
     runtimeState: context.runtimeState,
+    componentStack: context.componentStack,
   }
 }
