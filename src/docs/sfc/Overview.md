@@ -10,6 +10,11 @@
 <SFC_Renderer :ir="ir" :props="{ flight, compact: false }" />
 ```
 
+Compiled `definePorts` defaults are resolved before template rendering.
+Computation port locals are evaluated once per component render context, and a
+component port is rendered through the same nested `Component` adapter. This
+keeps row and nested-component results isolated without DOM-specific state.
+
 Визуальные primitive-теги рендерятся активным adapter-ом: `Text`, `DateTime`, `Number`, `Icon`, `Badge`, `Dot`, `Box`, `Flex`, `Divider`, `Input`, `Textarea`, `Checkbox`, `Select`.
 
 `Component`, `Table` и структурные table-теги остаются частью Vue render engine: они работают с runtime host и структурой IR, которые не входят в публичный adapter contract.

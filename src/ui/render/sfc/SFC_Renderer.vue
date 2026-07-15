@@ -17,6 +17,7 @@ const context = computed(() => createSFCVueRenderContext(
   props.props,
   props.renderVersion ?? 0,
   props.host ?? null,
+  props.ir,
 ))
 
 const RenderRoot = defineComponent({

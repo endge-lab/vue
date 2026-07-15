@@ -62,9 +62,11 @@ export function readSFCPath(path: string, context: SFCVueRenderContext): unknown
   const [head, ...tail] = segments
   if (!head.key) return undefined
 
-  const root = Object.prototype.hasOwnProperty.call(context.locals, head.key)
-    ? context.locals[head.key]
-    : context.props[head.key]
+  const root = head.key === 'props'
+    ? context.props
+    : Object.prototype.hasOwnProperty.call(context.locals, head.key)
+      ? context.locals[head.key]
+      : context.props[head.key]
 
   return tail.reduce<unknown>((current, segment) => {
     if (current == null) return undefined
@@ -175,6 +177,8 @@ function evaluateExpressionNode(
       return evaluateCallExpression(node, context)
     case 'ArrayExpression':
       return evaluateArrayExpression(node, context)
+    case 'ObjectExpression':
+      return evaluateObjectExpression(node, context)
     case 'TemplateLiteral':
       return evaluateTemplateLiteral(node, context)
     case 'ParenthesizedExpression':
@@ -198,6 +202,7 @@ function evaluateIdentifier(
   if (name === 'undefined') return undefined
   if (name === 'NaN') return Number.NaN
   if (name === 'Infinity') return Number.POSITIVE_INFINITY
+  if (name === 'props') return context.props
 
   if (Object.prototype.hasOwnProperty.call(context.locals, name)) {
     return context.locals[name]
@@ -555,6 +560,33 @@ function evaluateArrayExpression(
     values.push(value)
   }
   return values
+}
+
+function evaluateObjectExpression(
+  node: SFCExpressionNode,
+  context: SFCVueRenderContext,
+): SFCExpressionResult {
+  if (!Array.isArray(node.properties)) return UNSUPPORTED_EXPRESSION
+  const result: Record<string, unknown> = {}
+  for (const property of node.properties) {
+    const entry = asExpressionNode(property)
+    if (!entry || entry.type !== 'ObjectProperty' || entry.computed === true)
+      return UNSUPPORTED_EXPRESSION
+    const keyNode = asExpressionNode(entry.key)
+    const valueNode = asExpressionNode(entry.value)
+    if (!keyNode || !valueNode) return UNSUPPORTED_EXPRESSION
+    const key = keyNode.type === 'Identifier'
+      ? readIdentifierName(keyNode)
+      : keyNode.type === 'StringLiteral' || keyNode.type === 'NumericLiteral'
+        ? String(keyNode.value)
+        : UNSUPPORTED_EXPRESSION
+    if (key === UNSUPPORTED_EXPRESSION || BLOCKED_MEMBER_KEYS.has(key))
+      return UNSUPPORTED_EXPRESSION
+    const value = evaluateExpressionNode(valueNode, context)
+    if (value === UNSUPPORTED_EXPRESSION) return value
+    result[key] = value
+  }
+  return result
 }
 
 function evaluateTemplateLiteral(

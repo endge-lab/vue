@@ -4,6 +4,7 @@ import { Endge } from '@endge/core'
 import type { SFCVueRenderContext, SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
 import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
 import { renderSFCNodes } from '@/ui/render/sfc/SFCRender_Node'
+import { createSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
 
 /** Рендерит вложенный SFC artifact через тот же renderer-neutral IR pipeline. */
 export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) => {
@@ -18,15 +19,13 @@ export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) 
   if (!artifact?.payload.ir || artifact.status === 'error')
     return renderComponentError(input, `component:${identity}`)
 
-  const childContext: SFCVueRenderContext = {
-    props: createChildProps(input.props),
-    locals: {},
-    iteration: null,
-    renderVersion: input.context.renderVersion,
-    host: input.context.host,
-    runtimeState: input.context.runtimeState,
-    componentStack: [...input.context.componentStack, identity],
-  }
+  const childContext: SFCVueRenderContext = createSFCVueRenderContext(
+    createChildProps(input.props),
+    input.context.renderVersion,
+    input.context.host,
+    artifact.payload.ir,
+    [...input.context.componentStack, identity],
+  )
 
   const children = renderSFCNodes(
     input.h,
