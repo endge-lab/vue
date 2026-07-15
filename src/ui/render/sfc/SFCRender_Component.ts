@@ -1,6 +1,5 @@
 import type { ComponentSFCProgramPayload } from '@endge/core'
 import { Endge } from '@endge/core'
-import { Fragment } from 'vue'
 
 import type { SFCVueRenderContext, SFCVueRenderFunction } from '@/domain/types/sfc-render.type'
 import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
@@ -29,11 +28,21 @@ export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) 
     componentStack: [...input.context.componentStack, identity],
   }
 
-  return input.h(
-    Fragment as any,
-    null,
-    renderSFCNodes(input.h, artifact.payload.ir.template.roots, childContext),
+  const children = renderSFCNodes(
+    input.h,
+    artifact.payload.ir.template.roots,
+    childContext,
   )
+
+  if (children.length === 0) return null
+  if (children.length === 1) return children[0]!
+
+  // RevoGrid cell templates provide a DOM hyperscript function that accepts
+  // string tags, but not Vue's Symbol-based Fragment. `display: contents`
+  // keeps a multi-root authored component layout-neutral in both renderers.
+  return input.h('span', {
+    style: { display: 'contents' },
+  }, children)
 })
 
 function createChildProps(props: Record<string, unknown>): Record<string, unknown> {

@@ -11,7 +11,7 @@ import {
   Endge,
 } from '@endge/core'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { h, isVNode, type VNode } from 'vue'
+import { h, isVNode } from 'vue'
 
 import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
 import { createSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
@@ -61,9 +61,8 @@ defineProps<{ label: string }>()
 
     expect(isVNode(rendered)).toBe(true)
     if (!isVNode(rendered)) return
-    const text = vnodeChildren(rendered)[0]
-    expect(text.type).toBe('span')
-    expect(text.children).toEqual(['RA-89001'])
+    expect(rendered.type).toBe('span')
+    expect(rendered.children).toEqual(['RA-89001'])
   })
 
   it('stops recursive component calls with a deterministic placeholder', () => {
@@ -82,9 +81,8 @@ defineProps<{ label: string }>()
 
     expect(isVNode(rendered)).toBe(true)
     if (!isVNode(rendered)) return
-    const placeholder = vnodeChildren(rendered)[0]
-    expect(placeholder.props?.class).toContain('endge-sfc-component-placeholder')
-    expect(String(placeholder.children)).toContain('component cycle')
+    expect(rendered.props?.class).toContain('endge-sfc-component-placeholder')
+    expect(String(rendered.children)).toContain('component cycle')
   })
 })
 
@@ -102,8 +100,4 @@ function createArtifact(identity: string, source: string): ProgramArtifact<Compo
     metadata,
     payload,
   }
-}
-
-function vnodeChildren(vnode: VNode): VNode[] {
-  return Array.isArray(vnode.children) ? vnode.children.filter(isVNode) : []
 }

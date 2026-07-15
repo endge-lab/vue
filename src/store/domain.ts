@@ -39,9 +39,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
   // Интеграции
   const integrations = computed(() => domain.value.getIntegrations())
 
-  // Виды
-  const views = computed(() => domain.value.getViews())
-
   // Шаблоны страниц
   const pageTemplates = computed(() => domain.value.getPageTemplates())
 
@@ -113,7 +110,6 @@ export const useDomainStore = defineStore('endge-domain-store', () => {
     actions,
     converters,
     integrations,
-    views,
     pageTemplates,
     pages,
     navigations,
