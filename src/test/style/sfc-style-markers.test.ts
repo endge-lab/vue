@@ -42,4 +42,37 @@ describe('SFC EndgeCSS runtime markers', () => {
     expect(rendered.props?.['data-endge-scope-root']).toBe(ir.style?.scopeId)
     expect(String(rendered.props?.class)).toContain('endge-es-')
   })
+
+  it('exposes Table header and header-content as styled public parts', () => {
+    const compiled = compileComponentSFC(`<template>
+      <Table id="groundhandling-control" :rows="[]">
+        <Column key="aircraft" title="ВС"><Text>RA-00001</Text></Column>
+      </Table>
+    </template>
+    <style scoped lang="endgecss">
+      #groundhandling-control::part(header) { background-color: #1e3a5f; }
+      #groundhandling-control::part(header-content) { color: white; }
+    </style>`, { identity: 'ground-handling-table' })
+    const ir = compiled.ir!
+    const rendered = renderSFCNode(h, ir.template.roots[0], createSFCVueRenderContext({}, 0, null, ir))
+
+    expect(isVNode(rendered)).toBe(true)
+    if (!isVNode(rendered) || !Array.isArray(rendered.children)) return
+
+    const grid = rendered.children[0]
+    expect(isVNode(grid)).toBe(true)
+    if (!isVNode(grid)) return
+
+    const column = (grid.props?.columns as any[])[0]
+    expect(column.headerParts.header).toMatchObject({
+      part: 'header',
+      'data-endge-part': 'header',
+    })
+    expect(column.headerParts.headerContent).toMatchObject({
+      part: 'header-content',
+      'data-endge-part': 'header-content',
+    })
+    expect(column.headerParts.header.class).toHaveLength(1)
+    expect(column.headerParts.headerContent.class).toHaveLength(1)
+  })
 })
