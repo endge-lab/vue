@@ -10,6 +10,7 @@ export function createSFCVueRenderContext(
   host: ComponentSFCRuntimeHost | null = null,
   ir: RComponentSFC_IR | null = null,
   componentStack: readonly string[] = host?.entityIdentity ? [host.entityIdentity] : [],
+  consumerScope = 'root',
 ): SFCVueRenderContext {
   const context: SFCVueRenderContext = {
     props: props ?? {},
@@ -19,6 +20,7 @@ export function createSFCVueRenderContext(
     host,
     runtimeState: (host as any)?.runtimeState ?? null,
     componentStack,
+    consumerScope,
   }
   context.locals = evaluatePortLocals(ir, context)
   return context
@@ -29,6 +31,7 @@ export function extendSFCVueRenderContext(
   context: SFCVueRenderContext,
   locals: Record<string, unknown>,
   iteration: SFCVueRenderIteration | null = context.iteration,
+  consumerScope = context.consumerScope,
 ): SFCVueRenderContext {
   return {
     props: context.props,
@@ -41,6 +44,7 @@ export function extendSFCVueRenderContext(
     host: context.host,
     runtimeState: context.runtimeState,
     componentStack: context.componentStack,
+    consumerScope,
   }
 }
 
@@ -54,18 +58,10 @@ function evaluatePortLocals(
   for (const call of ir.script.portCalls ?? []) {
     context.locals = locals
     const input = evaluateSFCValue(call.input, context)
-    try {
-      locals[call.local] = Endge.runtime.computation.run(call.defaultIdentity, input)
-    }
-    catch (error) {
-      console.error('[EndgeSFC] Computation port failed', {
-        componentIdentity: context.componentStack.at(-1) ?? null,
-        port: call.port,
-        computationIdentity: call.defaultIdentity,
-        error,
-      })
-      locals[call.local] = undefined
-    }
+    const consumerKey = `${context.consumerScope}:${context.componentStack.join('>')}:${call.port}:${call.local}`
+    locals[call.local] = context.host
+      ? context.host.getComputationResource(call.defaultIdentity, input, consumerKey, call.port)
+      : Endge.runtime.computation.createResource(call.defaultIdentity, input, consumerKey)
   }
   return locals
 }

@@ -189,6 +189,12 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       input.props['cell-vertical-align'] ?? input.props.cellVerticalAlign,
     ),
   )
+  const tableContext = extendSFCVueRenderContext(
+    input.context,
+    {},
+    input.context.iteration,
+    `${input.context.consumerScope}/table:${input.node.id}`,
+  )
 
   return input.h('div', {
     ...input.attrs,
@@ -219,7 +225,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
         return renderTableCell({
           ...cellInput,
           fallbackH: input.h,
-          context: input.context,
+          context: tableContext,
           cellAlignmentStyle,
         })
       },
@@ -1285,7 +1291,7 @@ function renderTableCell(input: SFCTableCellRenderInput & {
     row,
     rowIndex,
     value: row[input.column.key],
-  })
+  }, input.context.iteration, `${input.context.consumerScope}/row:${rowIndex}/column:${input.column.key}`)
   const children = renderSFCNodes(h, input.column.cellNodes, cellContext)
 
   return h('div', {

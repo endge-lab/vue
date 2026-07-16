@@ -151,7 +151,7 @@ function renderForItem(
     value,
     indexValue: index,
     key,
-  })
+  }, `${input.context.consumerScope}/for:${input.node.id}:${String(key)}`)
 
   return renderOnce({
     ...input,

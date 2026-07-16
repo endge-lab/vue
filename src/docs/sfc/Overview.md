@@ -15,6 +15,10 @@ Computation port locals are evaluated once per component render context, and a
 component port is rendered through the same nested `Component` adapter. This
 keeps row and nested-component results isolated without DOM-specific state.
 
+Computation contracts are optional in v1. Generic types remain in the compiled
+SFC manifest, but runtime does not compare them with persisted computation
+fields. Execution errors are fatal for the current render pass.
+
 Визуальные primitive-теги рендерятся активным adapter-ом: `Text`, `DateTime`, `Number`, `Icon`, `Badge`, `Dot`, `Box`, `Flex`, `Divider`, `Input`, `Textarea`, `Checkbox`, `Select`.
 
 `Component`, `Table` и структурные table-теги остаются частью Vue render engine: они работают с runtime host и структурой IR, которые не входят в публичный adapter contract.

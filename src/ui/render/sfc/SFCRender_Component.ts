@@ -25,6 +25,7 @@ export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) 
     input.context.host,
     artifact.payload.ir,
     [...input.context.componentStack, identity],
+    `${input.context.consumerScope}/component:${input.node.id}:${identity}`,
   )
 
   const children = renderSFCNodes(

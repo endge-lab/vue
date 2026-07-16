@@ -12,7 +12,7 @@ import {
   Endge,
   compileComputation,
 } from '@endge/core'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { h, isVNode } from 'vue'
 
 import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
@@ -33,6 +33,7 @@ describe('SFCRender_Component', () => {
   })
 
   afterEach(() => {
+    Endge.runtime.computation.setSandboxAdapter(null)
     Endge.program.clear()
   })
 
@@ -106,13 +107,13 @@ const ports = definePorts({
 })
 const state = ports.state({ value: props.value })
 </script>
-<template><Process.Cell :point="state" /></template>`)
+<template><Process.Cell :point="state.value" /></template>`)
     const ir = owner.ir!
 
     const firstContext = createSFCVueRenderContext({ value: 'A' }, 0, null, ir, ['owner'])
     const secondContext = createSFCVueRenderContext({ value: 'B' }, 1, null, ir, ['owner'])
-    expect(firstContext.locals.state).toEqual({ value: 'A' })
-    expect(secondContext.locals.state).toEqual({ value: 'B' })
+    expect((firstContext.locals.state as any).value).toEqual({ value: 'A' })
+    expect((secondContext.locals.state as any).value).toEqual({ value: 'B' })
     expect(firstContext.locals.state).not.toBe(secondContext.locals.state)
 
     const rendered = renderSFCNode(h, ir.template.roots[0]!, firstContext)
@@ -133,7 +134,7 @@ const ports = definePorts({
 })
 const state = ports.state({ value: props.value })
 </script>
-<template><Text>{{ state.value }}</Text></template>`))
+<template><Text>{{ state.value.value }}</Text></template>`))
 
     const node: RComponentSFC_IR_ElementNode = {
       id: 'nested-call',
@@ -156,6 +157,58 @@ const state = ports.state({ value: props.value })
     expect(isVNode(first) && first.children).toEqual(['nested-A'])
     expect(isVNode(second) && second.children).toEqual(['nested-B'])
   })
+
+  it('exposes computation execution errors without failing the render context', () => {
+    const owner = compileComponentSFC(`<script setup lang="ts">
+interface Input { value?: string }
+const props = defineProps<{ value?: string }>()
+const ports = definePorts({
+  state: computation<Input, number>({ default: 'missing-computation' }),
+})
+const state = ports.state({ value: props.value })
+</script>
+<template><Text>{{ state }}</Text></template>`)
+
+    const context = createSFCVueRenderContext(
+      { value: 'A' },
+      0,
+      null,
+      owner.ir,
+      ['owner'],
+    )
+
+    expect((context.locals.state as any).status).toBe('error')
+    expect((context.locals.state as any).error).toEqual(expect.objectContaining({
+      kind: 'artifact-missing',
+      computationIdentity: 'missing-computation',
+    }))
+  })
+
+  it('exposes pending and success states for an asynchronous computation port', async () => {
+    Endge.program.beginCompile('test')
+    Endge.program.addArtifact(createAsyncComputationArtifact('async-state'))
+    Endge.runtime.computation.setSandboxAdapter({
+      execute: async request => ({ value: String(request.inputs.value).toUpperCase() }),
+    })
+
+    const owner = compileComponentSFC(`<script setup lang="ts">
+interface Input { value?: string }
+interface Output { value?: string }
+const props = defineProps<{ value?: string }>()
+const ports = definePorts({
+  state: computation<Input, Output>({ default: 'async-state' }),
+})
+const state = ports.state({ value: props.value })
+</script>
+<template><Text>{{ state.value?.value }}</Text></template>`)
+
+    const context = createSFCVueRenderContext({ value: 'ready' }, 0, null, owner.ir, ['owner'])
+    const resource = context.locals.state as any
+    expect(resource.status).toBe('pending')
+    expect(resource.loading).toBe(true)
+    await vi.waitFor(() => expect(resource.status).toBe('success'))
+    expect(resource.value).toEqual({ value: 'READY' })
+  })
 })
 
 function createArtifact(identity: string, source: string): ProgramArtifact<ComponentSFCProgramPayload> {
@@ -176,11 +229,36 @@ function createArtifact(identity: string, source: string): ProgramArtifact<Compo
 
 function createComputationArtifact(identity: string): ProgramArtifact<ComputationProgramPayload> {
   const compiled = compileComputation({
-    implementationKind: 'source',
-    sourceLanguage: 'typescript',
-    source: 'export default function compute(input: Input): Output { return { value: get(input, \'value\') } }',
+    source: "defineComputation({ outputs: { result: { value: input('value') } }, result: output('result') })",
     input: { type: 'Input' },
     output: { type: 'Output' },
+  })
+  return {
+    ref: { entityType: 'computation', id: identity, identity },
+    sourceHash: identity,
+    compilerVersion: 'test',
+    status: compiled.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 'error' : 'valid',
+    diagnostics: compiled.diagnostics,
+    dependencies: [],
+    capabilities: ['compilable', 'runnable'],
+    metadata: { self: {}, nodes: [] },
+    payload: compiled.payload,
+  }
+}
+
+function createAsyncComputationArtifact(identity: string): ProgramArtifact<ComputationProgramPayload> {
+  const compiled = compileComputation({
+    source: `defineComputation({
+      outputs: {
+        result: typescript({
+          inputs: { value: input('value') },
+          compute({ value }) { return { value } },
+        }),
+      },
+      result: output('result'),
+    })`,
+    input: null,
+    output: null,
   })
   return {
     ref: { entityType: 'computation', id: identity, identity },
