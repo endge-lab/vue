@@ -14,10 +14,16 @@ import { randomString } from '@endge/utils'
 import { onBeforeUnmount, ref, watch } from 'vue'
 
 import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
+import { EndgeDOMStyleRuntime } from '@/model/style/EndgeDOMStyleRuntime'
+import type { ComponentSFCProgramPayload, EndgeStyleSheetArtifact } from '@endge/core'
 
 export class EndgeVueModule extends EndgeModule {
   private _started = false
   private _unsubscribeWorkspace: (() => void) | null = null
+  private _unsubscribeStyles: (() => void) | null = null
+  private _unsubscribeProgram: (() => void) | null = null
+  private _unsubscribeUIRegistry: (() => void) | null = null
+  private readonly _styleRuntime = new EndgeDOMStyleRuntime()
 
   public override setup(): void {
     Endge.uiRegistry.adapters.register(NativeVueSFCAdapter)
@@ -69,13 +75,35 @@ export class EndgeVueModule extends EndgeModule {
 
     this._unsubscribeWorkspace = Endge.workspace.subscribe(() => {
       this._activateWorkspaceAdapter()
+      this._refreshStyles()
     })
+    this._unsubscribeStyles = Endge.styles.subscribe(() => this._refreshStyles())
+    this._unsubscribeProgram = Endge.program.subscribe(() => this._refreshStyles())
+    this._unsubscribeUIRegistry = Endge.uiRegistry.subscribe(() => this._refreshStyles())
+    this._refreshStyles()
   }
 
   public override reset(): void {
     this._unsubscribeWorkspace?.()
     this._unsubscribeWorkspace = null
+    this._unsubscribeStyles?.()
+    this._unsubscribeStyles = null
+    this._unsubscribeProgram?.()
+    this._unsubscribeProgram = null
+    this._unsubscribeUIRegistry?.()
+    this._unsubscribeUIRegistry = null
+    this._styleRuntime.reset()
     this._started = false
+  }
+
+  private _refreshStyles(): void {
+    const artifacts: EndgeStyleSheetArtifact[] = [...Endge.styles.getActiveArtifacts()]
+    for (const artifact of Endge.program.getArtifacts()) {
+      if (artifact.ref.entityType !== 'component-sfc') continue
+      const style = (artifact.payload as ComponentSFCProgramPayload).ir?.style
+      if (style) artifacts.push(style)
+    }
+    this._styleRuntime.update(artifacts, { renderer: 'dom', capabilities: [] })
   }
 
 }

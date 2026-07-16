@@ -12,6 +12,8 @@ import type {
   RuntimeHostRaphInputSource,
   RuntimeBoundaryPatch,
   UIRenderAdapter,
+  EndgeStyleMatchNode,
+  EndgeStyleSheetArtifact,
 } from '@endge/core'
 import type { h as VueH, VNode } from 'vue'
 
@@ -41,6 +43,16 @@ export interface SFCVueRenderContext {
   componentStack: readonly string[]
   /** Stable renderer scope used to isolate host-owned computation resources. */
   consumerScope: string
+  /** Effective global, ancestor and local style artifacts for this boundary. */
+  styleArtifacts: readonly EndgeStyleSheetArtifact[]
+  /** Logical parent in the abstract SFC tree. */
+  styleParent: EndgeStyleMatchNode | undefined
+  /** Already rendered logical siblings; physical Vue wrappers are not present here. */
+  styleSiblings: EndgeStyleMatchNode[]
+  /** Expected logical sibling count for structural pseudo selectors. */
+  styleSiblingCount: number
+  /** Current scoped SFC owner. */
+  styleOwnerScopeId: string | undefined
 }
 
 /** Structural runtime-state controller contract used by Vue render adapters. */

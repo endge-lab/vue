@@ -3,6 +3,7 @@ import type {
   RComponentSFC_IR_ForDirective,
   RComponentSFC_IR_Value,
 } from '@endge/core'
+import type { EndgeStyleMatchNode } from '@endge/core'
 import type {
   SFCVueRenderConditionState,
   SFCVueRenderContext,
@@ -10,8 +11,9 @@ import type {
   SFCVueRenderFunction,
   SFCVueRenderResult,
 } from '@/domain/types/sfc-render.type'
-import { extendSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
+import { extendSFCVueRenderContext, extendSFCVueStyleContext } from '@/ui/render/sfc/SFCRender_Context'
 import { evaluateSFCProps, evaluateSFCValue, isTruthySFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
+import { getEndgeDOMStyleClasses } from '@/model/style/endge-dom-style'
 
 /** Выполняет общий SFC render pipeline вокруг primitive renderer-а. */
 export function SFCRender_Base(renderFn: SFCVueRenderFunction): SFCVueRenderFunction {
@@ -81,6 +83,7 @@ export function resolveSFCConditionState(
 export function createSFCBaseAttrs(
   node: RComponentSFC_IR_ElementNode,
   props: Record<string, unknown>,
+  styleNode?: EndgeStyleMatchNode,
 ): Record<string, unknown> {
   const attrs: Record<string, unknown> = {
     key: resolveKey(node, props),
@@ -91,6 +94,24 @@ export function createSFCBaseAttrs(
 
   if (props.tooltip != null) attrs.title = String(props.tooltip)
 
+  if (styleNode) {
+    attrs['data-endge-node'] = node.id
+    attrs['data-endge-tag'] = node.tag
+    if (styleNode.id) attrs['data-endge-id'] = styleNode.id
+    if (styleNode.states.size) attrs['data-endge-state'] = [...styleNode.states].join(' ')
+    if (styleNode.parts.size) {
+      attrs.part = [...styleNode.parts].join(' ')
+      attrs['data-endge-part'] = [...styleNode.parts].join(' ')
+    }
+    if (styleNode.component) attrs['data-endge-component'] = styleNode.component
+    if (styleNode.identity) attrs['data-endge-identity'] = styleNode.identity
+    if (styleNode.ownerScopeId) {
+      attrs['data-endge-scope'] = styleNode.ownerScopeId
+      if (!styleNode.parent || styleNode.parent.ownerScopeId !== styleNode.ownerScopeId)
+        attrs['data-endge-scope-root'] = styleNode.ownerScopeId
+    }
+  }
+
   return attrs
 }
 
@@ -99,14 +120,20 @@ function renderOnce(
   renderFn: SFCVueRenderFunction,
 ): SFCVueRenderResult {
   const props = evaluateSFCProps(input.node.props, input.context)
+  const styleNode = createStyleNode(input.node, props, input.context)
+  input.context.styleSiblings.push(styleNode)
+  const generatedClasses = getEndgeDOMStyleClasses(input.context.styleArtifacts, styleNode)
+  if (generatedClasses.length > 0) props.class = [props.class, ...generatedClasses]
   const attrs = {
-    ...createSFCBaseAttrs(input.node, props),
+    ...createSFCBaseAttrs(input.node, props, styleNode),
     ...input.attrs,
   }
-  const children = input.renderChildren(input.context)
+  const childContext = extendSFCVueStyleContext(input.context, styleNode)
+  const children = input.renderChildren(childContext)
 
   return renderFn({
     ...input,
+    context: childContext,
     children,
     props,
     attrs,
@@ -123,9 +150,10 @@ function renderForDirective(
   const source = evaluateSFCValue(directive.source, input.context)
   const entries = createForEntries(source)
   if (!entries) return null
+  const logicalSiblings: EndgeStyleMatchNode[] = []
 
   const children = entries
-    .map(([key, value], index) => renderForItem(input, renderFn, directive, key, value, index))
+    .map(([key, value], index) => renderForItem(input, renderFn, directive, key, value, index, entries.length, logicalSiblings))
     .filter((child): child is Exclude<SFCVueRenderResult, null> => child !== null)
 
   return input.h('span', null, children)
@@ -138,6 +166,8 @@ function renderForItem(
   key: unknown,
   value: unknown,
   index: number,
+  count: number,
+  styleSiblings: EndgeStyleMatchNode[],
 ): SFCVueRenderResult {
   const locals: Record<string, unknown> = {
     [directive.item]: value,
@@ -152,11 +182,54 @@ function renderForItem(
     indexValue: index,
     key,
   }, `${input.context.consumerScope}/for:${input.node.id}:${String(key)}`)
+  context.styleSiblings = styleSiblings
+  context.styleSiblingCount = count
 
   return renderOnce({
     ...input,
     context,
   }, renderFn)
+}
+
+function createStyleNode(
+  node: RComponentSFC_IR_ElementNode,
+  props: Record<string, unknown>,
+  context: SFCVueRenderContext,
+): EndgeStyleMatchNode {
+  const classes = normalizeTokenSet(props.class)
+  const states = normalizeStateSet(props.state)
+  const parts = normalizeTokenSet(props.part)
+  const identity = node.tag === 'Component' ? String(props.is ?? props.identity ?? '').trim() || undefined : undefined
+  return {
+    tag: node.tag,
+    id: typeof props.id === 'string' && props.id.trim() ? props.id.trim() : undefined,
+    classes,
+    attributes: props,
+    states,
+    parts,
+    component: node.componentTag,
+    identity,
+    ownerScopeId: context.styleOwnerScopeId,
+    parent: context.styleParent,
+    previousSiblings: [...context.styleSiblings],
+    index: context.styleSiblings.length + 1,
+    siblingCount: context.styleSiblingCount || context.styleSiblings.length + 1,
+  }
+}
+
+function normalizeTokenSet(value: unknown): Set<string> {
+  const result = new Set<string>()
+  const visit = (item: unknown) => {
+    if (typeof item === 'string') item.trim().split(/\s+/).filter(Boolean).forEach(token => result.add(token))
+    else if (Array.isArray(item)) item.forEach(visit)
+    else if (item && typeof item === 'object') Object.entries(item as Record<string, unknown>).forEach(([key, enabled]) => { if (enabled) result.add(key) })
+  }
+  visit(value)
+  return result
+}
+
+function normalizeStateSet(value: unknown): Set<string> {
+  return normalizeTokenSet(value)
 }
 
 function createForEntries(source: unknown): Array<[unknown, unknown]> | null {

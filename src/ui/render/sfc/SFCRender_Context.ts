@@ -1,4 +1,4 @@
-import type { ComponentSFCRuntimeHost, RComponentSFC_IR } from '@endge/core'
+import type { ComponentSFCRuntimeHost, EndgeStyleMatchNode, EndgeStyleSheetArtifact, RComponentSFC_IR } from '@endge/core'
 import { Endge } from '@endge/core'
 import type { SFCVueRenderContext, SFCVueRenderIteration } from '@/domain/types/sfc-render.type'
 import { evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
@@ -11,7 +11,19 @@ export function createSFCVueRenderContext(
   ir: RComponentSFC_IR | null = null,
   componentStack: readonly string[] = host?.entityIdentity ? [host.entityIdentity] : [],
   consumerScope = 'root',
+  inheritedStyleArtifacts?: readonly EndgeStyleSheetArtifact[],
 ): SFCVueRenderContext {
+  const styleArtifacts = inheritedStyleArtifacts
+    ? [...inheritedStyleArtifacts]
+    : [
+        ...Endge.styles.getActiveArtifacts(),
+        ...Endge.program.getArtifacts().flatMap((artifact) => {
+          if (artifact.ref.entityType !== 'component-sfc') return []
+          const style = (artifact.payload as { ir?: RComponentSFC_IR | null }).ir?.style
+          return style?.scope === 'global' ? [style] : []
+        }),
+      ]
+  if (ir?.style && !styleArtifacts.includes(ir.style)) styleArtifacts.push(ir.style)
   const context: SFCVueRenderContext = {
     props: props ?? {},
     locals: {},
@@ -21,6 +33,11 @@ export function createSFCVueRenderContext(
     runtimeState: (host as any)?.runtimeState ?? null,
     componentStack,
     consumerScope,
+    styleArtifacts,
+    styleParent: undefined,
+    styleSiblings: [],
+    styleSiblingCount: 0,
+    styleOwnerScopeId: ir?.style?.scopeId,
   }
   context.locals = evaluatePortLocals(ir, context)
   return context
@@ -45,6 +62,24 @@ export function extendSFCVueRenderContext(
     runtimeState: context.runtimeState,
     componentStack: context.componentStack,
     consumerScope,
+    styleArtifacts: context.styleArtifacts,
+    styleParent: context.styleParent,
+    styleSiblings: context.styleSiblings,
+    styleSiblingCount: context.styleSiblingCount,
+    styleOwnerScopeId: context.styleOwnerScopeId,
+  }
+}
+
+/** Creates a logical child frame without carrying physical Vue wrappers into selector semantics. */
+export function extendSFCVueStyleContext(
+  context: SFCVueRenderContext,
+  parent: EndgeStyleMatchNode,
+): SFCVueRenderContext {
+  return {
+    ...context,
+    styleParent: parent,
+    styleSiblings: [],
+    styleSiblingCount: 0,
   }
 }
 
