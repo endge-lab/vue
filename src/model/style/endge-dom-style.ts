@@ -1,6 +1,7 @@
 import type {
   EndgeStyleDiagnostic,
   EndgeStyleMatchNode,
+  EndgeStylePlacement,
   EndgeStyleRule,
   EndgeStyleSelector,
   EndgeStyleSheetArtifact,
@@ -21,6 +22,8 @@ export interface EndgeDOMStyleMaterialization {
   classes: EndgeDOMStyleClassEntry[]
   diagnostics: EndgeStyleDiagnostic[]
 }
+
+export type EndgeDOMStyleInput = EndgeStyleSheetArtifact | EndgeStylePlacement
 
 function generatedClass(rule: EndgeStyleRule, selectorIndex: number): string {
   return `endge-${rule.id}-${selectorIndex}`.replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -48,7 +51,7 @@ function collectCapabilities(rule: EndgeStyleRule): string[] {
 
 /** Converts neutral EndgeCSS artifacts to browser CSS over generated runtime classes. */
 export function materializeEndgeCSSForDOM(
-  artifacts: readonly EndgeStyleSheetArtifact[],
+  inputs: readonly EndgeDOMStyleInput[],
   target: EndgeStyleTargetProfile = { renderer: 'dom', capabilities: [] },
 ): EndgeDOMStyleMaterialization {
   const diagnostics: EndgeStyleDiagnostic[] = []
@@ -61,10 +64,13 @@ export function materializeEndgeCSSForDOM(
     value: string
     important: boolean
     sourceOrder: number
+    boundaryId?: string
     theme?: string
   }> = []
 
-  artifacts.forEach((artifact, artifactOrder) => {
+  inputs.forEach((input, artifactOrder) => {
+    const artifact = isPlacement(input) ? input.artifact : input
+    const boundaryId = isPlacement(input) ? input.boundaryId : undefined
     for (const theme of artifact.themes) {
       const root = artifact.scope === 'component' && artifact.scopeId
         ? `[data-endge-scope-root=${cssString(artifact.scopeId)}]`
@@ -80,6 +86,7 @@ export function materializeEndgeCSSForDOM(
           value: declarationsText,
           important: false,
           sourceOrder: artifactOrder * 1_000_000 - 1,
+          boundaryId,
           theme: theme.id,
         })
     }
@@ -107,6 +114,7 @@ export function materializeEndgeCSSForDOM(
             value: declaration.value,
             important: declaration.important,
             sourceOrder: artifactOrder * 1_000_000 + rule.sourceOrder,
+            boundaryId,
             theme: rule.theme,
           })
         }
@@ -120,16 +128,25 @@ export function materializeEndgeCSSForDOM(
     || left.sourceOrder - right.sourceOrder)
 
   const css = declarations.map((declaration) => {
-    const baseSelector = declaration.className.startsWith(':root') || declaration.className.startsWith('[data-')
+    let baseSelector = declaration.className.startsWith(':root') || declaration.className.startsWith('[data-')
       ? declaration.className
       // Every generated class has the same non-zero CSS specificity. Endge has
       // already resolved its own specificity through declaration order, while
       // the class must still be able to override renderer/vendor tag defaults.
       : `.${declaration.className}`
-    const selector = declaration.theme
-      ? baseSelector === ':root'
-        ? `:root[data-endge-theme=${cssString(declaration.theme)}]`
-        : `:root[data-endge-theme=${cssString(declaration.theme)}] ${baseSelector}`
+    if (declaration.boundaryId) {
+      const marker = `[data-endge-runtime-scope~=${cssString(declaration.boundaryId)}]`
+      baseSelector = baseSelector === ':root'
+        ? marker
+        : `${marker}${baseSelector},${marker} ${baseSelector}`
+    }
+    const theme = declaration.theme
+    const selector = theme
+      ? baseSelector.split(',').map(selectorPart =>
+          selectorPart === ':root'
+            ? `:root[data-endge-theme=${cssString(theme)}]`
+            : `:root[data-endge-theme=${cssString(theme)}] ${selectorPart}`,
+        ).join(',')
       : baseSelector
     if (!declaration.property)
       return `${selector}{${declaration.value}}`
@@ -137,6 +154,10 @@ export function materializeEndgeCSSForDOM(
   }).join('\n')
 
   return { css, classes, diagnostics }
+}
+
+function isPlacement(input: EndgeDOMStyleInput): input is EndgeStylePlacement {
+  return 'artifact' in input && 'boundaryId' in input
 }
 
 /** Returns stable classes for all neutral selectors matching one logical node. */

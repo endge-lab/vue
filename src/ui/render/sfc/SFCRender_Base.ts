@@ -84,6 +84,7 @@ export function createSFCBaseAttrs(
   node: RComponentSFC_IR_ElementNode,
   props: Record<string, unknown>,
   styleNode?: EndgeStyleMatchNode,
+  runtimeScopeIds: readonly string[] = [],
 ): Record<string, unknown> {
   const attrs: Record<string, unknown> = {
     key: resolveKey(node, props),
@@ -111,6 +112,8 @@ export function createSFCBaseAttrs(
         attrs['data-endge-scope-root'] = styleNode.ownerScopeId
     }
   }
+  if (runtimeScopeIds.length)
+    attrs['data-endge-runtime-scope'] = runtimeScopeIds.join(' ')
 
   return attrs
 }
@@ -125,7 +128,7 @@ function renderOnce(
   const generatedClasses = getEndgeDOMStyleClasses(input.context.styleArtifacts, styleNode)
   if (generatedClasses.length > 0) props.class = [props.class, ...generatedClasses]
   const attrs = {
-    ...createSFCBaseAttrs(input.node, props, styleNode),
+    ...createSFCBaseAttrs(input.node, props, styleNode, input.context.runtimeScopeIds),
     ...input.attrs,
   }
   const childContext = extendSFCVueStyleContext(input.context, styleNode)
@@ -210,6 +213,7 @@ function createStyleNode(
     component: node.componentTag,
     identity,
     ownerScopeId: context.styleOwnerScopeId,
+    runtimeScopeIds: new Set(context.runtimeScopeIds),
     parent: context.styleParent,
     previousSiblings: [...context.styleSiblings],
     index: context.styleSiblings.length + 1,

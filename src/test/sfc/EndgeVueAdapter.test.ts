@@ -12,18 +12,20 @@ import { renderSFCNode } from '@/ui/render/sfc/SFCRender_Node'
 const TEST_WORKSPACE: EndgeWorkspaceDefinition = {
   identity: 'workspace-test',
   displayName: 'Test Workspace',
-  vars: [],
-  locales: [{ code: 'en', displayName: 'English', shortLabel: 'EN' }],
-  defaultLocale: 'en',
-  fallbackLocale: 'en',
-  themes: [
-    { identity: 'light', displayName: 'Light' },
-    { identity: 'dark', displayName: 'Dark' },
-  ],
-  defaultTheme: 'light',
-  defaultAuthProfileIdentity: null,
-  sfcAdapterIds: ['native-vue'],
-  defaultSfcAdapterId: 'native-vue',
+  configuration: {
+    vars: [],
+    locales: [{ code: 'en', displayName: 'English', shortLabel: 'EN', direction: 'ltr' }],
+    defaultLocale: 'en',
+    fallbackLocale: 'en',
+    themes: [
+      { identity: 'light', displayName: 'Light' },
+      { identity: 'dark', displayName: 'Dark' },
+    ],
+    defaultTheme: 'light',
+    defaultAuthProfileIdentity: null,
+    sfcAdapterIds: ['native-vue'],
+    defaultSfcAdapterId: 'native-vue',
+  },
 }
 
 describe('EndgeVueModule SFC adapter', () => {
@@ -51,8 +53,11 @@ describe('EndgeVueModule SFC adapter', () => {
     module.setup()
     Endge.workspace.apply({
       ...TEST_WORKSPACE,
-      sfcAdapterIds: ['customer-aodb'],
-      defaultSfcAdapterId: 'customer-aodb',
+      configuration: {
+        ...TEST_WORKSPACE.configuration,
+        sfcAdapterIds: ['customer-aodb'],
+        defaultSfcAdapterId: 'customer-aodb',
+      },
     })
 
     expect(() => module.build()).toThrow(
@@ -77,8 +82,11 @@ describe('EndgeVueModule SFC adapter', () => {
     Endge.uiRegistry.adapters.register(customerAdapter)
     Endge.workspace.apply({
       ...TEST_WORKSPACE,
-      sfcAdapterIds: ['native-vue', 'customer-aodb'],
-      defaultSfcAdapterId: 'customer-aodb',
+      configuration: {
+        ...TEST_WORKSPACE.configuration,
+        sfcAdapterIds: ['native-vue', 'customer-aodb'],
+        defaultSfcAdapterId: 'customer-aodb',
+      },
     })
     module.build()
 

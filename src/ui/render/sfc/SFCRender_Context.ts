@@ -13,16 +13,13 @@ export function createSFCVueRenderContext(
   consumerScope = 'root',
   inheritedStyleArtifacts?: readonly EndgeStyleSheetArtifact[],
 ): SFCVueRenderContext {
+  const lifecycleScope = host ? Endge.runtime.getRuntimeScopeByHost(host.id) : null
+  const runtimeScopeIds: string[] = []
+  for (let current = lifecycleScope; current; current = current.parent)
+    runtimeScopeIds.unshift(current.id)
   const styleArtifacts = inheritedStyleArtifacts
     ? [...inheritedStyleArtifacts]
-    : [
-        ...Endge.styles.getActiveArtifacts(),
-        ...Endge.program.getArtifacts().flatMap((artifact) => {
-          if (artifact.ref.entityType !== 'component-sfc') return []
-          const style = (artifact.payload as { ir?: RComponentSFC_IR | null }).ir?.style
-          return style?.scope === 'global' ? [style] : []
-        }),
-      ]
+    : [...Endge.styles.getActiveArtifacts()]
   if (ir?.style && !styleArtifacts.includes(ir.style)) styleArtifacts.push(ir.style)
   const context: SFCVueRenderContext = {
     props: props ?? {},
@@ -38,6 +35,7 @@ export function createSFCVueRenderContext(
     styleSiblings: [],
     styleSiblingCount: 0,
     styleOwnerScopeId: ir?.style?.scopeId,
+    runtimeScopeIds,
   }
   context.locals = evaluatePortLocals(ir, context)
   return context
@@ -67,6 +65,7 @@ export function extendSFCVueRenderContext(
     styleSiblings: context.styleSiblings,
     styleSiblingCount: context.styleSiblingCount,
     styleOwnerScopeId: context.styleOwnerScopeId,
+    runtimeScopeIds: context.runtimeScopeIds,
   }
 }
 

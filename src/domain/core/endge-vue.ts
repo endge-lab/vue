@@ -15,7 +15,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 
 import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
 import { EndgeDOMStyleRuntime } from '@/model/style/EndgeDOMStyleRuntime'
-import type { ComponentSFCProgramPayload, EndgeStyleSheetArtifact } from '@endge/core'
+import type { EndgeStylePlacement } from '@endge/core'
 
 export class EndgeVueModule extends EndgeModule {
   private _started = false
@@ -23,6 +23,7 @@ export class EndgeVueModule extends EndgeModule {
   private _unsubscribeStyles: (() => void) | null = null
   private _unsubscribeProgram: (() => void) | null = null
   private _unsubscribeUIRegistry: (() => void) | null = null
+  private _unsubscribeRuntimeScopes: (() => void) | null = null
   private readonly _styleRuntime = new EndgeDOMStyleRuntime()
 
   public override setup(): void {
@@ -80,6 +81,7 @@ export class EndgeVueModule extends EndgeModule {
     this._unsubscribeStyles = Endge.styles.subscribe(() => this._refreshStyles())
     this._unsubscribeProgram = Endge.program.subscribe(() => this._refreshStyles())
     this._unsubscribeUIRegistry = Endge.uiRegistry.subscribe(() => this._refreshStyles())
+    this._unsubscribeRuntimeScopes = Endge.runtime.scopes.subscribe(() => this._refreshStyles())
     this._refreshStyles()
   }
 
@@ -92,18 +94,18 @@ export class EndgeVueModule extends EndgeModule {
     this._unsubscribeProgram = null
     this._unsubscribeUIRegistry?.()
     this._unsubscribeUIRegistry = null
+    this._unsubscribeRuntimeScopes?.()
+    this._unsubscribeRuntimeScopes = null
     this._styleRuntime.reset()
     this._started = false
   }
 
   private _refreshStyles(): void {
-    const artifacts: EndgeStyleSheetArtifact[] = [...Endge.styles.getActiveArtifacts()]
-    for (const artifact of Endge.program.getArtifacts()) {
-      if (artifact.ref.entityType !== 'component-sfc') continue
-      const style = (artifact.payload as ComponentSFCProgramPayload).ir?.style
-      if (style) artifacts.push(style)
-    }
-    this._styleRuntime.update(artifacts, { renderer: 'dom', capabilities: [] })
+    const artifacts: EndgeStylePlacement[] = [...Endge.styles.getActivePlacements()]
+    const hiddenScopeIds = Endge.runtime.scopes.getAll()
+      .filter(scope => scope.state !== 'active' && scope.state !== 'inactive' && scope.state !== 'disposed')
+      .map(scope => scope.id)
+    this._styleRuntime.update(artifacts, { renderer: 'dom', capabilities: [] }, hiddenScopeIds)
   }
 
 }

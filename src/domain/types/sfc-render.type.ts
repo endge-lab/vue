@@ -53,6 +53,8 @@ export interface SFCVueRenderContext {
   styleSiblingCount: number
   /** Current scoped SFC owner. */
   styleOwnerScopeId: string | undefined
+  /** Runtime lifecycle ancestry used by renderer boundary isolation. */
+  runtimeScopeIds: readonly string[]
 }
 
 /** Structural runtime-state controller contract used by Vue render adapters. */
