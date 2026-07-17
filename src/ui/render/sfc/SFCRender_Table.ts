@@ -8,7 +8,6 @@ import type {
   ComponentSFCTableSortMode,
   ComponentSFCTableSortStateItem,
   ContextMenuDescriptor,
-  EndgeStyleMatchNode,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
   RuntimeBoundaryPatch,
@@ -28,7 +27,7 @@ import {
   TABLE_RUNTIME_COMMAND_IDS,
 } from '@endge/core'
 import type { PropType } from 'vue'
-import { computed, defineComponent, h as vueH, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, defineComponent, h as vueH, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 import type {
   SFCVueRenderContext,
@@ -48,20 +47,21 @@ import {
 } from '@/ui/render/sfc/SFCRender_TableAlignment'
 import { SFCVueBoundaryRegistryKey } from '@/ui/render/sfc/SFCRender_BoundaryRegistry'
 import { closeEndgeContextMenu, openEndgeContextMenu } from '@/ui/overlay/context-menu-manager'
-import { getEndgeDOMStyleClasses } from '@/model/style/endge-dom-style'
-
-interface SFCTablePublicPartAttrs extends Record<string, unknown> {
-  part: string
-  'data-endge-part': string
-  class: string[]
-}
-
-interface SFCTableHeaderParts {
-  header: SFCTablePublicPartAttrs
-  headerContent: SFCTablePublicPartAttrs
-}
+import {
+  createSFCTableColumnStyleSurfaces,
+  createSFCTableStyleContract,
+  decorateSFCTableRows,
+  getSFCTableCellStyleSurfaces,
+  SFC_TABLE_ROW_CLASS_FIELD,
+  type SFCTableColumnStyleSurfaces,
+  type SFCTablePublicPartAttrs,
+  type SFCTableStyleContract,
+  syncSFCTableDOMSurfaces,
+  toRevoGridSurfaceProps,
+} from '@/ui/render/sfc/SFCRender_TableStyle'
 
 interface SFCTableColumn {
+  index: number
   key: string
   title: string
   width: number | null
@@ -69,7 +69,7 @@ interface SFCTableColumn {
   sort: SFCTableColumnSort | null
   cellNodes: RComponentSFC_IR_Node[]
   rowDependencies: Set<string>
-  headerParts: SFCTableHeaderParts
+  styleSurfaces: SFCTableColumnStyleSurfaces
 }
 
 interface SFCTableColumnSort {
@@ -192,7 +192,8 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const sortDescriptor = normalizeComponentSFCTableSort(input.node)
   const pinDescriptor = normalizeComponentSFCTableColumnPin(input.node)
   const columnMenuDescriptor = normalizeComponentSFCTableColumnMenu(input.node)
-  const columns = collectTableColumns(input.node, input.context, sortDescriptor, pinDescriptor)
+  const styleContract = createSFCTableStyleContract(input.context)
+  const columns = collectTableColumns(input.node, input.context, sortDescriptor, pinDescriptor, styleContract)
   const source = rows.map(row => normalizeRowSnapshot(row, rowKey))
   const sortMode = normalizeComponentSFCTableSortMode(input.props['sort-mode'] ?? input.props.sortMode ?? sortDescriptor.mode)
   const pinMode = normalizeComponentSFCTableColumnPinMode(input.props['column-pin'] ?? input.props.columnPin ?? pinDescriptor.mode)
@@ -226,6 +227,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       runtimeState: input.context.runtimeState,
       columns,
       source,
+      styleContract,
       rowKey,
       sortMode,
       pinMode,
@@ -268,6 +270,10 @@ const SFCRevoGridTable = defineComponent({
     },
     source: {
       type: Array as PropType<Record<string, unknown>[]>,
+      required: true,
+    },
+    styleContract: {
+      type: Object as PropType<SFCTableStyleContract>,
       required: true,
     },
     rowKey: {
@@ -320,7 +326,7 @@ const SFCRevoGridTable = defineComponent({
     const sortState = shallowRef(resolveInitialSortState())
     const defaultPinState = computed(() => createInitialPinState(props.pinMode, props.defaultPin, props.columns))
     const pinState = shallowRef(resolveInitialPinState())
-    const currentSource = shallowRef(applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode))
+    const currentSource = shallowRef(createStyledSource(baseSource.value))
     const previousSource = shallowRef(cloneRows(currentSource.value))
     const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
     const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
@@ -370,6 +376,8 @@ const SFCRevoGridTable = defineComponent({
       applyPatch: applyRuntimePatch,
     })
 
+    onMounted(schedulePublicSurfaceSync)
+
     onBeforeUnmount(() => {
       closeEndgeContextMenu(props.boundaryId)
       unregisterBoundary?.()
@@ -392,7 +400,7 @@ const SFCRevoGridTable = defineComponent({
         }
 
         baseSource.value = nextBaseSource
-        const nextSource = applyTableSort(nextBaseSource, props.columns, sortState.value, props.sortMode)
+        const nextSource = createStyledSource(nextBaseSource)
         currentSource.value = nextSource
         await nextTick()
         await updateGridCells({
@@ -407,6 +415,7 @@ const SFCRevoGridTable = defineComponent({
           await resolveGridElement(gridRef.value)?.refresh?.('all')
         previousSource.value = cloneRows(nextSource)
         previousColumnsSignature.value = createColumnsSignature(props.columns)
+        schedulePublicSurfaceSync()
       },
     )
 
@@ -423,7 +432,7 @@ const SFCRevoGridTable = defineComponent({
     async function commitSortState(nextSortState: ComponentSFCTableSortStateItem[]): Promise<void> {
       sortState.value = nextSortState
       persistTableState('sort', nextSortState)
-      const nextSource = applyTableSort(baseSource.value, props.columns, sortState.value, props.sortMode)
+      const nextSource = createStyledSource(baseSource.value)
       currentSource.value = nextSource
       previousSource.value = cloneRows(nextSource)
 
@@ -433,6 +442,7 @@ const SFCRevoGridTable = defineComponent({
         grid.source = nextSource
         await grid.refresh?.('all')
       }
+      schedulePublicSurfaceSync()
     }
 
     async function commitPinState(nextPinState: ComponentSFCTableColumnPinStateItem[]): Promise<void> {
@@ -440,6 +450,22 @@ const SFCRevoGridTable = defineComponent({
       persistTableState('pin', pinState.value)
       await nextTick()
       await resolveGridElement(gridRef.value)?.refresh?.('all')
+      schedulePublicSurfaceSync()
+    }
+
+    function createStyledSource(rows: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+      return decorateSFCTableRows(
+        applyTableSort([...rows], props.columns, sortState.value, props.sortMode),
+        props.columns.length,
+        props.styleContract,
+      )
+    }
+
+    function schedulePublicSurfaceSync(): void {
+      void nextTick(() => {
+        const grid = resolveGridHTMLElement(gridRef.value)
+        if (grid) syncSFCTableDOMSurfaces(grid, props.styleContract)
+      })
     }
 
     function resolveInitialSortState(): ComponentSFCTableSortStateItem[] {
@@ -569,7 +595,7 @@ const SFCRevoGridTable = defineComponent({
         props.rowKey,
       )
       baseSource.value = nextBaseSource
-      const nextSource = applyTableSort(nextBaseSource, props.columns, sortState.value, props.sortMode)
+      const nextSource = createStyledSource(nextBaseSource)
       currentSource.value = nextSource
       await nextTick()
 
@@ -582,6 +608,7 @@ const SFCRevoGridTable = defineComponent({
       if (sortState.value.length > 0) {
         await grid.refresh?.('all')
         previousSource.value = cloneRows(nextSource)
+        schedulePublicSurfaceSync()
         return true
       }
 
@@ -597,13 +624,18 @@ const SFCRevoGridTable = defineComponent({
       }
 
       previousSource.value = cloneRows(nextSource)
+      schedulePublicSurfaceSync()
       return true
     }
 
     return () => vueH(RevoGrid as any, {
       ref: gridRef,
+      part: props.styleContract.grid.attrs.part,
+      'data-endge-part': props.styleContract.grid.attrs['data-endge-part'],
+      class: ['endge-sfc-table-grid', props.styleContract.grid.attrs.class],
       columns: revoColumns.value,
       source: currentSource.value,
+      rowClass: SFC_TABLE_ROW_CLASS_FIELD,
       rowSize: props.rowSize,
       exporting: true,
       theme: props.theme,
@@ -612,6 +644,8 @@ const SFCRevoGridTable = defineComponent({
       readonly: true,
       useAutofill: false,
       style: 'height: 100%',
+      onAfterrender: schedulePublicSurfaceSync,
+      onAfterheaderrender: schedulePublicSurfaceSync,
     })
   },
 })
@@ -621,22 +655,15 @@ function collectTableColumns(
   context: SFCVueRenderContext,
   sortDescriptor: ReturnType<typeof normalizeComponentSFCTableSort>,
   pinDescriptor: ReturnType<typeof normalizeComponentSFCTableColumnPin>,
+  styleContract: SFCTableStyleContract,
 ): SFCTableColumn[] {
   const columnNodes = tableNode.children
     .filter(isElementNode)
     .filter(node => node.tag === 'Column')
-  const headerSiblings: EndgeStyleMatchNode[] = []
-  const headerContentSiblings: EndgeStyleMatchNode[] = []
+  const styleSurfaces = createSFCTableColumnStyleSurfaces(styleContract, columnNodes.length)
 
   return columnNodes.map((node, index) => {
-    const header = createTablePublicPartNode(context, 'header', index, columnNodes.length, headerSiblings)
-    const headerContent = createTablePublicPartNode(context, 'header-content', index, columnNodes.length, headerContentSiblings)
-    headerSiblings.push(header)
-    headerContentSiblings.push(headerContent)
-    return createTableColumn(node, context, index, sortDescriptor, pinDescriptor, {
-      header: createTablePublicPartAttrs(context, header, 'header'),
-      headerContent: createTablePublicPartAttrs(context, headerContent, 'header-content'),
-    })
+    return createTableColumn(node, context, index, sortDescriptor, pinDescriptor, styleSurfaces[index])
   })
 }
 
@@ -646,7 +673,7 @@ function createTableColumn(
   index: number,
   sortDescriptor: ReturnType<typeof normalizeComponentSFCTableSort>,
   pinDescriptor: ReturnType<typeof normalizeComponentSFCTableColumnPin>,
-  headerParts: SFCTableHeaderParts,
+  styleSurfaces: SFCTableColumnStyleSurfaces,
 ): SFCTableColumn {
   const props = evaluateSFCProps(columnNode.props, context)
   const key = normalizeColumnKey(columnNode, context, props.key, `column_${index}`)
@@ -654,6 +681,7 @@ function createTableColumn(
   const pin = pinDescriptor.columns.find(column => column.key === key) ?? null
 
   return {
+    index,
     key,
     title: normalizeText(props.title ?? props.name, key),
     width: normalizeOptionalNumber(props.width ?? props.size),
@@ -667,45 +695,7 @@ function createTableColumn(
       : null,
     cellNodes: resolveCellNodes(columnNode),
     rowDependencies: extractRowDependencies(resolveCellNodes(columnNode), key),
-    headerParts,
-  }
-}
-
-/** Creates a pseudo-element-like logical node that retains the Table host selector identity. */
-function createTablePublicPartNode(
-  context: SFCVueRenderContext,
-  part: 'header' | 'header-content',
-  index: number,
-  siblingCount: number,
-  previousSiblings: readonly EndgeStyleMatchNode[],
-): EndgeStyleMatchNode {
-  const host = context.styleParent
-  return {
-    tag: host?.tag ?? 'Table',
-    id: host?.id,
-    classes: host?.classes ?? new Set<string>(),
-    attributes: host?.attributes ?? {},
-    states: host?.states ?? new Set<string>(),
-    parts: new Set([part]),
-    component: host?.component,
-    identity: host?.identity,
-    ownerScopeId: host?.ownerScopeId ?? context.styleOwnerScopeId,
-    parent: host?.parent,
-    previousSiblings: [...previousSiblings],
-    index: index + 1,
-    siblingCount,
-  }
-}
-
-function createTablePublicPartAttrs(
-  context: SFCVueRenderContext,
-  node: EndgeStyleMatchNode,
-  part: 'header' | 'header-content',
-): SFCTablePublicPartAttrs {
-  return {
-    part,
-    'data-endge-part': part,
-    class: getEndgeDOMStyleClasses(context.styleArtifacts, node),
+    styleSurfaces,
   }
 }
 
@@ -754,10 +744,18 @@ function createRevoColumn(
     autoSize: column.width == null,
     size: column.width ?? 150,
     pin: toRevoGridPinSide(pinSide),
+    columnProperties: () => toRevoGridSurfaceProps(column.styleSurfaces.headerCell.attrs),
+    cellProperties: (cellProps: Record<string, unknown>) => {
+      const row = cellProps.model
+      if (!isPlainObject(row))
+        return undefined
+
+      const surfaces = getSFCTableCellStyleSurfaces(row, column.index)
+      return surfaces ? toRevoGridSurfaceProps(surfaces.cell.attrs) : undefined
+    },
     columnTemplate: VGridVueTemplate(SFCRevoGridColumnHeader, {
       title: column.title,
-      headerAttrs: column.headerParts.header,
-      headerContentAttrs: column.headerParts.headerContent,
+      headerContentAttrs: column.styleSurfaces.headerContent.attrs,
       isSortable: column.sort?.sortable === true,
       sortEnabled: sortMeta.enabled,
       sortDirection: sortMeta.direction,
@@ -775,10 +773,6 @@ const SFCRevoGridColumnHeader = defineComponent({
   props: {
     title: {
       type: String,
-      required: true,
-    },
-    headerAttrs: {
-      type: Object as PropType<SFCTablePublicPartAttrs>,
       required: true,
     },
     headerContentAttrs: {
@@ -834,13 +828,10 @@ const SFCRevoGridColumnHeader = defineComponent({
     }
 
     return () => vueH('div', {
-      part: props.headerAttrs.part,
-      'data-endge-part': props.headerAttrs['data-endge-part'],
       class: [
-        'endge-sfc-table-header',
+        'endge-sfc-table-header-control',
         props.isSortable ? 'endge-sfc-table-header--sortable' : '',
         props.sortEnabled ? 'endge-sfc-table-header--sorted' : '',
-        props.headerAttrs.class,
       ],
       role: props.isSortable ? 'button' : undefined,
       tabindex: props.isSortable ? 0 : undefined,
@@ -890,6 +881,8 @@ const SFCRevoGridColumnHeader = defineComponent({
             minWidth: 0,
             maxWidth: '100%',
             textAlign: 'center',
+            color: 'inherit',
+            fontWeight: 'inherit',
           },
         }, `${props.title} \u200e`),
         props.sortEnabled && props.sortDirection
@@ -1388,9 +1381,13 @@ function renderTableCell(input: SFCTableCellRenderInput & {
     value: row[input.column.key],
   }, input.context.iteration, `${input.context.consumerScope}/row:${rowIndex}/column:${input.column.key}`)
   const children = renderSFCNodes(h, input.column.cellNodes, cellContext)
+  const styleSurfaces = getSFCTableCellStyleSurfaces(row, input.column.index)
+  const contentAttrs = styleSurfaces?.cellContent.attrs
 
   return h('div', {
-    class: 'endge-sfc-table-cell',
+    part: contentAttrs?.part,
+    'data-endge-part': contentAttrs?.['data-endge-part'],
+    class: ['endge-sfc-table-cell-content', contentAttrs?.class],
     style: {
       display: 'flex',
       ...input.cellAlignmentStyle,
@@ -1613,6 +1610,15 @@ function resolveGridElement(value: { $el?: SFCRevoGridElement } | SFCRevoGridEle
     return value
 
   return null
+}
+
+function resolveGridHTMLElement(
+  value: { $el?: SFCRevoGridElement } | SFCRevoGridElement | null,
+): HTMLElement | null {
+  const element = value && '$el' in value && value.$el ? value.$el : value
+  return typeof HTMLElement !== 'undefined' && element instanceof HTMLElement
+    ? element
+    : null
 }
 
 function isRevoGridElement(value: unknown): value is SFCRevoGridElement {

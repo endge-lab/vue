@@ -122,7 +122,10 @@ export function materializeEndgeCSSForDOM(
   const css = declarations.map((declaration) => {
     const baseSelector = declaration.className.startsWith(':root') || declaration.className.startsWith('[data-')
       ? declaration.className
-      : `:where(.${declaration.className})`
+      // Every generated class has the same non-zero CSS specificity. Endge has
+      // already resolved its own specificity through declaration order, while
+      // the class must still be able to override renderer/vendor tag defaults.
+      : `.${declaration.className}`
     const selector = declaration.theme
       ? baseSelector === ':root'
         ? `:root[data-endge-theme=${cssString(declaration.theme)}]`

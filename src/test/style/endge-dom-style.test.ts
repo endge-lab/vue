@@ -23,6 +23,15 @@ describe('EndgeCSS DOM materializer', () => {
     expect(result.css.lastIndexOf('!important')).toBeGreaterThan(result.css.lastIndexOf('color:blue'))
   })
 
+  it('uses uniform non-zero class specificity to override renderer defaults', () => {
+    const artifact = compileEndgeCSS('Table::part(header-content) { color: white; }').artifact!
+    const result = materializeEndgeCSSForDOM([artifact])
+    const generatedClass = result.classes[0].className
+
+    expect(result.css).toContain(`.${generatedClass}{color:white;}`)
+    expect(result.css).not.toContain(`:where(.${generatedClass})`)
+  })
+
   it('includes dom rules, excludes canvas rules and warns for unknown capabilities', () => {
     const artifact = compileEndgeCSS(`
       @supports renderer(dom) { Text { color: green; } }

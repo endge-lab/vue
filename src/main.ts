@@ -5,6 +5,7 @@ export * from '@/domain/core/endge-vue'
 
 export * from '@/reactive/use-current-environment'
 export * from '@/reactive/use-current-locale'
+export * from '@/reactive/use-current-theme'
 export * from '@/reactive/use-current-project-filter'
 export * from '@/reactive/use-ui'
 export * from '@/store/domain'

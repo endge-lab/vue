@@ -16,6 +16,11 @@ const TEST_WORKSPACE: EndgeWorkspaceDefinition = {
   locales: [{ code: 'en', displayName: 'English', shortLabel: 'EN' }],
   defaultLocale: 'en',
   fallbackLocale: 'en',
+  themes: [
+    { identity: 'light', displayName: 'Light' },
+    { identity: 'dark', displayName: 'Dark' },
+  ],
+  defaultTheme: 'light',
   defaultAuthProfileIdentity: null,
   sfcAdapterIds: ['native-vue'],
   defaultSfcAdapterId: 'native-vue',
