@@ -2,12 +2,12 @@ import type {
   ContextMenuDescriptor,
   ContextMenuItemDescriptor,
   ContextMenuNodeDescriptor,
-  RuntimeCommandContext,
+  RuntimeActionContext,
 } from '@endge/core'
 import { Endge } from '@endge/core'
 import { reactive } from 'vue'
 
-export interface EndgeContextMenuOpenInput<TContext extends RuntimeCommandContext = RuntimeCommandContext> {
+export interface EndgeContextMenuOpenInput<TContext extends RuntimeActionContext = RuntimeActionContext> {
   ownerId: string
   x: number
   y: number
@@ -21,7 +21,7 @@ export interface EndgeContextMenuState {
   x: number
   y: number
   menu: ContextMenuDescriptor | null
-  context: RuntimeCommandContext | null
+  context: RuntimeActionContext | null
 }
 
 export const endgeContextMenuState = reactive<EndgeContextMenuState>({
@@ -62,7 +62,7 @@ export function getExecutableContextMenuItems(): ContextMenuNodeDescriptor[] {
     if (item.kind === 'separator')
       return true
 
-    return Endge.runtime.commands.canExecute(item.command, context)
+    return Endge.runtime.actions.canExecute(item.action, context)
   }))
 }
 
@@ -71,7 +71,7 @@ export async function executeEndgeContextMenuItem(item: ContextMenuItemDescripto
   if (!context)
     return
 
-  await Endge.runtime.commands.execute(item.command, context)
+  await Endge.runtime.actions.execute(item.action, context)
   closeEndgeContextMenu()
 }
 
@@ -81,8 +81,8 @@ export function resolveEndgeContextMenuItemLabel(item: ContextMenuItemDescriptor
   if (Endge.i18n.te(item.label))
     return Endge.i18n.t(item.label, { defaultValue: fallback })
 
-  if (item.command !== item.label && Endge.i18n.te(item.command))
-    return Endge.i18n.t(item.command, { defaultValue: fallback })
+  if (item.action !== item.label && Endge.i18n.te(item.action))
+    return Endge.i18n.t(item.action, { defaultValue: fallback })
 
   return fallback
 }

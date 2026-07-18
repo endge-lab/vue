@@ -102,10 +102,12 @@ interface Output { value?: string }
 interface CellProps { point?: Output }
 const props = defineProps<{ value?: string }>()
 const ports = definePorts({
-  state: computation<Input, Output>({ default: 'process-state' }),
-  cell: component<CellProps>({ tag: 'Process.Cell', default: 'process-cell' }),
+  request: {
+    state: computation<Input, Output>({ default: 'process-state' }),
+    cell: component<CellProps>({ tag: 'Process.Cell', default: 'process-cell' }),
+  },
 })
-const state = ports.state({ value: props.value })
+const state = ports.request.state({ value: props.value })
 </script>
 <template><Process.Cell :point="state.value" /></template>`)
     const ir = owner.ir!
@@ -130,9 +132,11 @@ interface Input { value?: string }
 interface Output { value?: string }
 const props = defineProps<{ value?: string }>()
 const ports = definePorts({
-  state: computation<Input, Output>({ default: 'process-state' }),
+  request: {
+    state: computation<Input, Output>({ default: 'process-state' }),
+  },
 })
-const state = ports.state({ value: props.value })
+const state = ports.request.state({ value: props.value })
 </script>
 <template><Text>{{ state.value.value }}</Text></template>`))
 
@@ -163,9 +167,11 @@ const state = ports.state({ value: props.value })
 interface Input { value?: string }
 const props = defineProps<{ value?: string }>()
 const ports = definePorts({
-  state: computation<Input, number>({ default: 'missing-computation' }),
+  request: {
+    state: computation<Input, number>({ default: 'missing-computation' }),
+  },
 })
-const state = ports.state({ value: props.value })
+const state = ports.request.state({ value: props.value })
 </script>
 <template><Text>{{ state }}</Text></template>`)
 
@@ -196,9 +202,11 @@ interface Input { value?: string }
 interface Output { value?: string }
 const props = defineProps<{ value?: string }>()
 const ports = definePorts({
-  state: computation<Input, Output>({ default: 'async-state' }),
+  request: {
+    state: computation<Input, Output>({ default: 'async-state' }),
+  },
 })
-const state = ports.state({ value: props.value })
+const state = ports.request.state({ value: props.value })
 </script>
 <template><Text>{{ state.value?.value }}</Text></template>`)
 

@@ -11,10 +11,10 @@ import type {
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
   RuntimeBoundaryPatch,
-  TableColumnCommandContext,
+  TableColumnActionContext,
   TableColumnPinSide,
   TableColumnSortState,
-  TableRuntimeCommandTarget,
+  TableRuntimeActionTarget,
   TableSortDirection,
 } from '@endge/core'
 import {
@@ -24,7 +24,7 @@ import {
   normalizeComponentSFCTableColumnPinMode,
   normalizeComponentSFCTableSort,
   normalizeComponentSFCTableSortMode,
-  TABLE_RUNTIME_COMMAND_IDS,
+  TABLE_RUNTIME_ACTION_IDS,
 } from '@endge/core'
 import type { PropType } from 'vue'
 import { computed, defineComponent, h as vueH, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
@@ -122,33 +122,33 @@ const DEFAULT_TABLE_COLUMN_MENU: ContextMenuDescriptor = {
   items: [
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.columnPinLeft,
-      label: TABLE_RUNTIME_COMMAND_IDS.columnPinLeft,
-      command: TABLE_RUNTIME_COMMAND_IDS.columnPinLeft,
+      id: TABLE_RUNTIME_ACTION_IDS.columnPinLeft,
+      label: TABLE_RUNTIME_ACTION_IDS.columnPinLeft,
+      action: TABLE_RUNTIME_ACTION_IDS.columnPinLeft,
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.columnPinRight,
-      label: TABLE_RUNTIME_COMMAND_IDS.columnPinRight,
-      command: TABLE_RUNTIME_COMMAND_IDS.columnPinRight,
+      id: TABLE_RUNTIME_ACTION_IDS.columnPinRight,
+      label: TABLE_RUNTIME_ACTION_IDS.columnPinRight,
+      action: TABLE_RUNTIME_ACTION_IDS.columnPinRight,
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.columnUnpin,
-      label: TABLE_RUNTIME_COMMAND_IDS.columnUnpin,
-      command: TABLE_RUNTIME_COMMAND_IDS.columnUnpin,
+      id: TABLE_RUNTIME_ACTION_IDS.columnUnpin,
+      label: TABLE_RUNTIME_ACTION_IDS.columnUnpin,
+      action: TABLE_RUNTIME_ACTION_IDS.columnUnpin,
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.columnResetPin,
-      label: TABLE_RUNTIME_COMMAND_IDS.columnResetPin,
-      command: TABLE_RUNTIME_COMMAND_IDS.columnResetPin,
+      id: TABLE_RUNTIME_ACTION_IDS.columnResetPin,
+      label: TABLE_RUNTIME_ACTION_IDS.columnResetPin,
+      action: TABLE_RUNTIME_ACTION_IDS.columnResetPin,
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.columnResetAllPins,
-      label: TABLE_RUNTIME_COMMAND_IDS.columnResetAllPins,
-      command: TABLE_RUNTIME_COMMAND_IDS.columnResetAllPins,
+      id: TABLE_RUNTIME_ACTION_IDS.columnResetAllPins,
+      label: TABLE_RUNTIME_ACTION_IDS.columnResetAllPins,
+      action: TABLE_RUNTIME_ACTION_IDS.columnResetAllPins,
     },
     {
       kind: 'separator',
@@ -156,21 +156,21 @@ const DEFAULT_TABLE_COLUMN_MENU: ContextMenuDescriptor = {
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnAsc,
-      label: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnAsc,
-      command: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnAsc,
+      id: TABLE_RUNTIME_ACTION_IDS.sortSetColumnAsc,
+      label: TABLE_RUNTIME_ACTION_IDS.sortSetColumnAsc,
+      action: TABLE_RUNTIME_ACTION_IDS.sortSetColumnAsc,
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnDesc,
-      label: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnDesc,
-      command: TABLE_RUNTIME_COMMAND_IDS.sortSetColumnDesc,
+      id: TABLE_RUNTIME_ACTION_IDS.sortSetColumnDesc,
+      label: TABLE_RUNTIME_ACTION_IDS.sortSetColumnDesc,
+      action: TABLE_RUNTIME_ACTION_IDS.sortSetColumnDesc,
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.sortClearColumn,
-      label: TABLE_RUNTIME_COMMAND_IDS.sortClearColumn,
-      command: TABLE_RUNTIME_COMMAND_IDS.sortClearColumn,
+      id: TABLE_RUNTIME_ACTION_IDS.sortClearColumn,
+      label: TABLE_RUNTIME_ACTION_IDS.sortClearColumn,
+      action: TABLE_RUNTIME_ACTION_IDS.sortClearColumn,
     },
     {
       kind: 'separator',
@@ -178,9 +178,9 @@ const DEFAULT_TABLE_COLUMN_MENU: ContextMenuDescriptor = {
     },
     {
       kind: 'item',
-      id: TABLE_RUNTIME_COMMAND_IDS.sortClearAll,
-      label: TABLE_RUNTIME_COMMAND_IDS.sortClearAll,
-      command: TABLE_RUNTIME_COMMAND_IDS.sortClearAll,
+      id: TABLE_RUNTIME_ACTION_IDS.sortClearAll,
+      label: TABLE_RUNTIME_ACTION_IDS.sortClearAll,
+      action: TABLE_RUNTIME_ACTION_IDS.sortClearAll,
     },
   ],
 }
@@ -331,7 +331,7 @@ const SFCRevoGridTable = defineComponent({
     const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
     const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
     const previousPinSignature = shallowRef(createTablePinSignature(props.pinMode, props.defaultPin, props.columns))
-    const tableCommandTarget: TableRuntimeCommandTarget = {
+    const tableActionTarget: TableRuntimeActionTarget = {
       setColumnPin: async (columnKey, side) => {
         await commitPinState(setColumnPinState(pinState.value, columnKey, side, props.pinMode, props.columns))
       },
@@ -526,7 +526,7 @@ const SFCRevoGridTable = defineComponent({
         return
       }
 
-      const context = createColumnCommandContext(column, columnIndex)
+      const context = createColumnActionContext(column, columnIndex)
       if (!hasExecutableMenuItem(menu, context)) {
         closeEndgeContextMenu(props.boundaryId)
         return
@@ -541,16 +541,16 @@ const SFCRevoGridTable = defineComponent({
       })
     }
 
-    function createColumnCommandContext(
+    function createColumnActionContext(
       column: SFCTableColumn,
       columnIndex: number,
-    ): TableColumnCommandContext {
+    ): TableColumnActionContext {
       return {
         surface: 'table-column-header',
         runtimeId: props.runtimeState?.runtimeId ?? props.boundaryId,
         tableRuntimeId: props.runtimeState?.runtimeId ?? props.boundaryId,
         tableId: props.tableId || props.boundaryId,
-        target: tableCommandTarget,
+        target: tableActionTarget,
         columnKey: column.key,
         columnIndex,
         pinnable: column.pinnable,
@@ -997,9 +997,9 @@ function toRevoGridPinSide(side: TableColumnPinSide): 'colPinStart' | 'colPinEnd
 
 function hasExecutableMenuItem(
   menu: ContextMenuDescriptor,
-  context: TableColumnCommandContext,
+  context: TableColumnActionContext,
 ): boolean {
-  return menu.items.some(item => item.kind === 'item' && Endge.runtime.commands.canExecute(item.command, context))
+  return menu.items.some(item => item.kind === 'item' && Endge.runtime.actions.canExecute(item.action, context))
 }
 
 function createInitialSortState(
