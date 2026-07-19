@@ -18,6 +18,7 @@ import { SFCRender_Number } from '@/ui/render/sfc/SFCRender_Number'
 import { SFCRender_Select } from '@/ui/render/sfc/SFCRender_Select'
 import { SFCRender_Text } from '@/ui/render/sfc/SFCRender_Text'
 import { SFCRender_Textarea } from '@/ui/render/sfc/SFCRender_Textarea'
+import { SFCRender_Table } from '@/ui/render/sfc/SFCRender_Table'
 
 export const NATIVE_VUE_SFC_ADAPTER_ID = 'native-vue'
 
@@ -42,5 +43,6 @@ export const NativeVueSFCAdapter: SFCVueRenderAdapter = {
     Textarea: SFCRender_Textarea,
     Checkbox: SFCRender_Checkbox,
     Select: SFCRender_Select,
+    Table: SFCRender_Table,
   },
 }

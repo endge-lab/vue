@@ -188,6 +188,8 @@ const DEFAULT_TABLE_COLUMN_MENU: ContextMenuDescriptor = {
 /** Рендерит SFC Table primitive через RevoGrid, не раскрывая RevoGrid в SFC-синтаксис. */
 export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const rows = normalizeRows(input.props.rows)
+  const explicitHeight = input.props.height ?? input.props.h
+  const fillsAvailableHeight = explicitHeight == null || explicitHeight === ''
   const rowKey = normalizeText(input.props['row-key'] ?? input.props.rowKey, 'id')
   const sortDescriptor = normalizeComponentSFCTableSort(input.node)
   const pinDescriptor = normalizeComponentSFCTableColumnPin(input.node)
@@ -213,12 +215,15 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
 
   return input.h('div', {
     ...input.attrs,
+    'data-endge-layout-fill-height': fillsAvailableHeight ? '' : undefined,
     class: ['endge-sfc-table', input.props.class],
     style: {
       ...(isPlainObject(input.attrs.style) ? input.attrs.style : {}),
       width: normalizeCssSize(input.props.width ?? input.props.w, '100%'),
-      height: normalizeCssSize(input.props.height ?? input.props.h, '360px'),
-      minHeight: '180px',
+      height: normalizeCssSize(explicitHeight, '100%'),
+      minHeight: normalizeCssSize(input.props.minHeight ?? input.props.minH, '180px'),
+      flex: fillsAvailableHeight ? '1 1 0%' : undefined,
+      overflow: 'hidden',
     },
   }, [
     input.h(SFCRevoGridTable as any, {

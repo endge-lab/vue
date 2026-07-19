@@ -12,6 +12,9 @@ import { renderSFCNode } from '@/ui/render/sfc/SFCRender_Node'
 const TEST_WORKSPACE: EndgeWorkspaceDefinition = {
   identity: 'workspace-test',
   displayName: 'Test Workspace',
+  managedBy: 'user',
+  managedById: null,
+  installedIntegrations: [],
   configuration: {
     vars: [],
     locales: [{ code: 'en', displayName: 'English', shortLabel: 'EN', direction: 'ltr' }],
@@ -25,6 +28,28 @@ const TEST_WORKSPACE: EndgeWorkspaceDefinition = {
     defaultAuthProfileIdentity: null,
     sfcAdapterIds: ['native-vue'],
     defaultSfcAdapterId: 'native-vue',
+    diagnostics: {
+      telemetry: {
+        collection: {
+          enabled: false,
+          signals: ['log'],
+          minSeverity: 9,
+          maxRecords: 2_000,
+        },
+        outputs: [],
+        routes: [],
+      },
+      snapshots: {
+        content: { telemetry: true, problems: true, configuration: false },
+        automatic: {
+          enabled: false,
+          errorCount: 10,
+          windowSeconds: 60,
+          cooldownSeconds: 300,
+          outputIds: [],
+        },
+      },
+    },
   },
 }
 

@@ -1,6 +1,5 @@
 import type {
   ComponentSFCRuntimeHost,
-  EndgeSFCRenderAdapterKey,
   RComponentSFC_IR,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
@@ -15,7 +14,16 @@ import type {
   EndgeStyleMatchNode,
   EndgeStyleSheetArtifact,
 } from '@endge/core'
+import { ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS } from '@endge/core'
 import type { h as VueH, VNode } from 'vue'
+
+/** Полный контракт Vue adapter-а: простые primitives и compound Table renderer. */
+export const SFC_VUE_RENDER_ADAPTER_REQUIRED_KEYS = [
+  ...ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
+  'Table',
+] as const
+
+export type SFCVueRenderAdapterKey = typeof SFC_VUE_RENDER_ADAPTER_REQUIRED_KEYS[number]
 
 /** Поддерживаемые SFC primitive-теги во Vue adapter. */
 export type SFCVueRenderPrimitive = RComponentSFC_IR_Tag
@@ -147,24 +155,24 @@ export type SFCVueRenderAdapterFunction = (
   input: SFCVueRenderAdapterElementInput,
 ) => SFCVueRenderResult
 
-/** Полный набор visual primitive renderers Vue adapter-а. */
+/** Функция renderer-а одного SFC primitive или compound-тега. */
+export type SFCVueRenderFunction = (
+  input: SFCVueRenderElementInput,
+) => SFCVueRenderResult
+
+/** Полный набор visual и compound renderers Vue adapter-а. */
 export type SFCVueRenderAdapterRendererMap = Record<
-  EndgeSFCRenderAdapterKey,
-  SFCVueRenderAdapterFunction
+  SFCVueRenderAdapterKey,
+  SFCVueRenderFunction
 >
 
 /** Типизированный SFC adapter для Vue render engine. */
-export interface SFCVueRenderAdapter extends UIRenderAdapter<SFCVueRenderAdapterFunction> {
+export interface SFCVueRenderAdapter extends UIRenderAdapter<SFCVueRenderFunction> {
   protocol: 'endge-sfc'
   protocolVersion: 1
   renderer: 'vue'
   renderers: SFCVueRenderAdapterRendererMap
 }
-
-/** Функция renderer-а одного SFC primitive-тега. */
-export type SFCVueRenderFunction = (
-  input: SFCVueRenderElementInput,
-) => SFCVueRenderResult
 
 /** Вход функции рендера произвольного SFC IR узла. */
 export interface SFCVueRenderNodeInput {

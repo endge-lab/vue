@@ -8,9 +8,10 @@ const ir: RComponentSFC_IR = {
     props: [],
     locals: [],
       ports: {
-        request: { computations: [], components: [], actions: [] },
+        require: { computations: [], components: [], actions: [] },
         provides: { actions: [] },
         emits: { events: [] },
+        forward: { rules: [] },
       },
     portCalls: [],
   },

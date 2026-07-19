@@ -4,7 +4,6 @@ import type { Ref } from 'vue'
 import {
   ENDGE_SFC_RENDER_ADAPTER_PROTOCOL,
   ENDGE_SFC_RENDER_ADAPTER_PROTOCOL_VERSION,
-  ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
   Endge,
   EndgeModule,
   type EndgePlugin,
@@ -14,6 +13,7 @@ import { randomString } from '@endge/utils'
 import { onBeforeUnmount, ref, watch } from 'vue'
 
 import { NativeVueSFCAdapter } from '@/model/render/sfc/native-vue-sfc-adapter'
+import { SFC_VUE_RENDER_ADAPTER_REQUIRED_KEYS } from '@/domain/types/sfc-render.type'
 import { EndgeDOMStyleRuntime } from '@/model/style/EndgeDOMStyleRuntime'
 import type { EndgeStylePlacement } from '@endge/core'
 
@@ -40,7 +40,7 @@ export class EndgeVueModule extends EndgeModule {
       protocol: ENDGE_SFC_RENDER_ADAPTER_PROTOCOL,
       protocolVersion: ENDGE_SFC_RENDER_ADAPTER_PROTOCOL_VERSION,
       renderer: 'vue',
-      requiredRendererKeys: ENDGE_SFC_RENDER_ADAPTER_REQUIRED_KEYS,
+      requiredRendererKeys: SFC_VUE_RENDER_ADAPTER_REQUIRED_KEYS,
     })
   }
 
@@ -111,7 +111,7 @@ export class EndgeVueModule extends EndgeModule {
 }
 
 export const EndgeVuePlugin: EndgePlugin = {
-  id: '@endge/vue',
+  id: '@endge/ui-vue',
   install(): void {
     Endge.defineModule({
       key: 'vue',
