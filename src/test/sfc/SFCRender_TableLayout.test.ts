@@ -50,6 +50,30 @@ describe('SFC Table layout', () => {
     })
     expect(table.props?.style?.flex).toBeUndefined()
   })
+
+  it('enables paging by default and forwards the lazy marker', () => {
+    const table = renderTable({ lazy: true })
+    const grid = table.children as VNode[]
+
+    expect(grid[0]?.props).toMatchObject({
+      paging: 'pages',
+      pageSize: 10,
+      pageSizes: [10, 25, 50, 100],
+      lazy: true,
+    })
+  })
+
+  it('forwards virtual paging without changing the local data contract', () => {
+    const table = renderTable({ paging: 'virtual' })
+    const grid = table.children as VNode[]
+
+    expect(grid[0]?.props).toMatchObject({
+      paging: 'virtual',
+      pageSize: 10,
+      pageSizes: [10, 25, 50, 100],
+      lazy: false,
+    })
+  })
 })
 
 function renderTable(props: Record<string, unknown> = {}): VNode {

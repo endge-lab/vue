@@ -46,6 +46,7 @@ import {
   type SFCTableCellVerticalAlign,
 } from '@/ui/render/sfc/SFCRender_TableAlignment'
 import { SFCVueBoundaryRegistryKey } from '@/ui/render/sfc/SFCRender_BoundaryRegistry'
+import NativeTablePagination from '@/ui/table/NativeTablePagination.vue'
 import { closeEndgeContextMenu, openEndgeContextMenu } from '@/ui/overlay/context-menu-manager'
 import {
   createSFCTableColumnStyleSurfaces,
@@ -96,12 +97,15 @@ interface SFCTableCellRenderInput {
   column: SFCTableColumn
   cellProps: Record<string, unknown>
   rows: Record<string, unknown>[]
+  rowOffset: number
 }
 
 interface SFCTableCellAlignmentStyle {
   alignItems: 'flex-start' | 'center' | 'flex-end'
   justifyContent: 'flex-start' | 'center' | 'flex-end'
 }
+
+type SFCTablePaging = 'pages' | 'virtual'
 
 interface SFCTableSortMeta {
   enabled: boolean
@@ -240,6 +244,10 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       defaultSort: sortDescriptor.defaultSort,
       defaultPin: pinDescriptor.defaultPin,
       rowSize: normalizeNumber(input.props.rowSize, 40),
+      paging: normalizeTablePaging(input.props.paging),
+      pageSize: normalizePositiveInteger(input.props['page-size'] ?? input.props.pageSize, 10),
+      pageSizes: normalizePageSizes(input.props['page-sizes'] ?? input.props.pageSizes),
+      lazy: input.props.lazy === true,
       theme: normalizeText(input.props.theme, 'compact'),
       renderVersion: input.context.renderVersion,
       renderCell: (cellInput: SFCTableCellRenderInput) => {
@@ -309,6 +317,22 @@ const SFCRevoGridTable = defineComponent({
       type: Number,
       required: true,
     },
+    paging: {
+      type: String as PropType<SFCTablePaging>,
+      required: true,
+    },
+    pageSize: {
+      type: Number,
+      required: true,
+    },
+    pageSizes: {
+      type: Array as PropType<number[]>,
+      required: true,
+    },
+    lazy: {
+      type: Boolean,
+      required: true,
+    },
     theme: {
       type: String,
       required: true,
@@ -328,10 +352,17 @@ const SFCRevoGridTable = defineComponent({
     const baseSource = shallowRef(cloneRows(props.source))
     const tableStateKey = computed(() => props.tableId ? `table:${props.tableId}` : null)
     const missingTableIdWarned = ref(false)
+    const initialPagination = readTableState('pagination', { pageIndex: 0, pageSize: props.pageSize })
+    const pageSize = ref(normalizePositiveInteger(initialPagination.pageSize, props.pageSize))
+    const pageIndex = ref(Math.min(
+      normalizeNonNegativeInteger(initialPagination.pageIndex, 0),
+      Math.max(0, Math.ceil(baseSource.value.length / pageSize.value) - 1),
+    ))
     const sortState = shallowRef(resolveInitialSortState())
     const defaultPinState = computed(() => createInitialPinState(props.pinMode, props.defaultPin, props.columns))
     const pinState = shallowRef(resolveInitialPinState())
     const currentSource = shallowRef(createStyledSource(baseSource.value))
+    const pageCount = computed(() => Math.max(1, Math.ceil(baseSource.value.length / pageSize.value)))
     const previousSource = shallowRef(cloneRows(currentSource.value))
     const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
     const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
@@ -372,6 +403,7 @@ const SFCRevoGridTable = defineComponent({
             column,
             cellProps,
             rows: currentSource.value,
+            rowOffset: props.paging === 'pages' ? pageIndex.value * pageSize.value : 0,
           })
         },
       )
@@ -389,7 +421,7 @@ const SFCRevoGridTable = defineComponent({
     })
 
     watch(
-      () => [props.renderVersion, props.source, props.columns, props.sortMode, props.defaultSort, props.pinMode, props.defaultPin] as const,
+      () => [props.renderVersion, props.source, props.columns, props.sortMode, props.defaultSort, props.pinMode, props.defaultPin, props.paging] as const,
       async () => {
         const nextBaseSource = cloneRows(props.source)
         const nextSortSignature = createTableSortSignature(props.sortMode, props.defaultSort, props.columns)
@@ -405,6 +437,7 @@ const SFCRevoGridTable = defineComponent({
         }
 
         baseSource.value = nextBaseSource
+        clampPageIndex(nextBaseSource.length)
         const nextSource = createStyledSource(nextBaseSource)
         currentSource.value = nextSource
         await nextTick()
@@ -437,6 +470,8 @@ const SFCRevoGridTable = defineComponent({
     async function commitSortState(nextSortState: ComponentSFCTableSortStateItem[]): Promise<void> {
       sortState.value = nextSortState
       persistTableState('sort', nextSortState)
+      pageIndex.value = 0
+      persistPaginationState()
       const nextSource = createStyledSource(baseSource.value)
       currentSource.value = nextSource
       previousSource.value = cloneRows(nextSource)
@@ -459,11 +494,43 @@ const SFCRevoGridTable = defineComponent({
     }
 
     function createStyledSource(rows: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+      const sorted = applyTableSort([...rows], props.columns, sortState.value, props.sortMode)
+      const start = pageIndex.value * pageSize.value
+      const visibleRows = props.paging === 'virtual'
+        ? sorted
+        : sorted.slice(start, start + pageSize.value)
       return decorateSFCTableRows(
-        applyTableSort([...rows], props.columns, sortState.value, props.sortMode),
+        visibleRows,
         props.columns.length,
         props.styleContract,
       )
+    }
+
+    async function commitPagination(nextPageIndex: number, nextPageSize = pageSize.value): Promise<void> {
+      pageSize.value = normalizePositiveInteger(nextPageSize, props.pageSize)
+      pageIndex.value = Math.min(
+        normalizeNonNegativeInteger(nextPageIndex, 0),
+        Math.max(0, Math.ceil(baseSource.value.length / pageSize.value) - 1),
+      )
+      persistPaginationState()
+      const nextSource = createStyledSource(baseSource.value)
+      currentSource.value = nextSource
+      previousSource.value = cloneRows(nextSource)
+      await nextTick()
+      const grid = resolveGridElement(gridRef.value)
+      if (grid) {
+        grid.source = nextSource
+        await grid.refresh?.('all')
+      }
+      schedulePublicSurfaceSync()
+    }
+
+    function clampPageIndex(rowCount = baseSource.value.length): void {
+      pageIndex.value = Math.min(pageIndex.value, Math.max(0, Math.ceil(rowCount / pageSize.value) - 1))
+    }
+
+    function persistPaginationState(): void {
+      persistTableState('pagination', { pageIndex: pageIndex.value, pageSize: pageSize.value })
     }
 
     function schedulePublicSurfaceSync(): void {
@@ -610,49 +677,49 @@ const SFCRevoGridTable = defineComponent({
         return false
 
       grid.source = nextSource
-
-      if (sortState.value.length > 0) {
-        await grid.refresh?.('all')
-        previousSource.value = cloneRows(nextSource)
-        schedulePublicSurfaceSync()
-        return true
-      }
-
-      for (const projection of patch.affectedProjections) {
-        await grid.setDataAt?.({
-          row: patch.itemIndex,
-          col: projection.index,
-          rowType: 'rgRow',
-          colType: 'rgCol',
-          val: nextSource[patch.itemIndex]?.[projection.key],
-          skipDataUpdate: true,
-        })
-      }
-
+      await grid.refresh?.('all')
       previousSource.value = cloneRows(nextSource)
       schedulePublicSurfaceSync()
       return true
     }
 
-    return () => vueH(RevoGrid as any, {
-      ref: gridRef,
-      part: props.styleContract.grid.attrs.part,
-      'data-endge-part': props.styleContract.grid.attrs['data-endge-part'],
-      class: ['endge-sfc-table-grid', props.styleContract.grid.attrs.class],
-      columns: revoColumns.value,
-      source: currentSource.value,
-      rowClass: SFC_TABLE_ROW_CLASS_FIELD,
-      rowSize: props.rowSize,
-      exporting: true,
-      theme: props.theme,
-      resize: true,
-      range: false,
-      readonly: true,
-      useAutofill: false,
-      style: 'height: 100%',
-      onAfterrender: schedulePublicSurfaceSync,
-      onAfterheaderrender: schedulePublicSurfaceSync,
-    })
+    return () => vueH('div', {
+      class: 'endge-native-table',
+      'data-paging': props.paging,
+      'data-lazy': props.lazy ? 'true' : undefined,
+      style: 'display:flex;flex-direction:column;height:100%;min-height:0;width:100%;container-type:inline-size;',
+    }, [
+      vueH(RevoGrid as any, {
+        ref: gridRef,
+        part: props.styleContract.grid.attrs.part,
+        'data-endge-part': props.styleContract.grid.attrs['data-endge-part'],
+        class: ['endge-sfc-table-grid', props.styleContract.grid.attrs.class],
+        columns: revoColumns.value,
+        source: currentSource.value,
+        rowClass: SFC_TABLE_ROW_CLASS_FIELD,
+        rowSize: props.rowSize,
+        exporting: true,
+        theme: props.theme,
+        resize: true,
+        range: false,
+        readonly: true,
+        useAutofill: false,
+        style: 'height:100%;min-height:0;flex:1 1 0%;',
+        onAfterrender: schedulePublicSurfaceSync,
+        onAfterheaderrender: schedulePublicSurfaceSync,
+      }),
+      props.paging === 'pages'
+        ? vueH(NativeTablePagination, {
+            pageIndex: pageIndex.value,
+            pageSize: pageSize.value,
+            pageCount: pageCount.value,
+            pageSizes: props.pageSizes,
+            lazy: props.lazy,
+            'onUpdate:pageIndex': (value: number) => void commitPagination(value),
+            'onUpdate:pageSize': (value: number) => void commitPagination(0, value),
+          })
+        : null,
+    ])
   },
 })
 
@@ -1388,8 +1455,9 @@ function renderTableCell(input: SFCTableCellRenderInput & {
   cellAlignmentStyle: SFCTableCellAlignmentStyle
 }): ReturnType<SFCVueRenderH> {
   const h = input.h ?? input.fallbackH
-  const rowIndex = normalizeNumber(input.cellProps.rowIndex, 0)
-  const row = normalizeCellRow(input.rows, input.cellProps, rowIndex)
+  const localRowIndex = normalizeNumber(input.cellProps.rowIndex, 0)
+  const rowIndex = input.rowOffset + localRowIndex
+  const row = normalizeCellRow(input.rows, input.cellProps, localRowIndex)
   const cellContext = extendSFCVueRenderContext(input.context, {
     row,
     rowIndex,
@@ -1706,6 +1774,32 @@ function normalizeText(value: unknown, fallback: string): string {
 function normalizeNumber(value: unknown, fallback: number): number {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  const numeric = Math.floor(Number(value))
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback
+}
+
+function normalizeNonNegativeInteger(value: unknown, fallback: number): number {
+  const numeric = Math.floor(Number(value))
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback
+}
+
+function normalizeTablePaging(value: unknown): SFCTablePaging {
+  return String(value ?? '').trim().toLowerCase() === 'virtual' ? 'virtual' : 'pages'
+}
+
+function normalizePageSizes(value: unknown): number[] {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [10, 25, 50, 100]
+  const sizes = source
+    .map(size => normalizePositiveInteger(size, 0))
+    .filter(size => size > 0)
+  return [...new Set(sizes)].sort((left, right) => left - right)
 }
 
 function normalizeOptionalNumber(value: unknown): number | null {
