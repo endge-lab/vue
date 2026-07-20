@@ -22,6 +22,7 @@ import {
   normalizeComponentSFCTableColumnMenu,
   normalizeComponentSFCTableColumnPin,
   normalizeComponentSFCTableColumnPinMode,
+  normalizeComponentSFCTableColumnVisibility,
   normalizeComponentSFCTableSort,
   normalizeComponentSFCTableSortMode,
   TABLE_RUNTIME_ACTION_IDS,
@@ -197,6 +198,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const rowKey = normalizeText(input.props['row-key'] ?? input.props.rowKey, 'id')
   const sortDescriptor = normalizeComponentSFCTableSort(input.node)
   const pinDescriptor = normalizeComponentSFCTableColumnPin(input.node)
+  const visibilityDescriptor = normalizeComponentSFCTableColumnVisibility(input.node)
   const columnMenuDescriptor = normalizeComponentSFCTableColumnMenu(input.node)
   const styleContract = createSFCTableStyleContract(input.context)
   const columns = collectTableColumns(input.node, input.context, sortDescriptor, pinDescriptor, styleContract)
@@ -243,6 +245,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       columnMenu: columnMenuDescriptor,
       defaultSort: sortDescriptor.defaultSort,
       defaultPin: pinDescriptor.defaultPin,
+      defaultHidden: visibilityDescriptor.defaultHidden,
       rowSize: normalizeNumber(input.props.rowSize, 40),
       paging: normalizeTablePaging(input.props.paging),
       pageSize: normalizePositiveInteger(input.props['page-size'] ?? input.props.pageSize, 10),
@@ -313,6 +316,10 @@ const SFCRevoGridTable = defineComponent({
       type: Array as PropType<ComponentSFCTableColumnPinStateItem[]>,
       required: true,
     },
+    defaultHidden: {
+      type: Array as PropType<string[]>,
+      required: true,
+    },
     rowSize: {
       type: Number,
       required: true,
@@ -361,13 +368,22 @@ const SFCRevoGridTable = defineComponent({
     const sortState = shallowRef(resolveInitialSortState())
     const defaultPinState = computed(() => createInitialPinState(props.pinMode, props.defaultPin, props.columns))
     const pinState = shallowRef(resolveInitialPinState())
+    const visibilityState = shallowRef(resolveInitialVisibilityState())
+    const visibleColumns = computed(() => filterVisibleTableColumns(props.columns, visibilityState.value))
     const currentSource = shallowRef(createStyledSource(baseSource.value))
     const pageCount = computed(() => Math.max(1, Math.ceil(baseSource.value.length / pageSize.value)))
     const previousSource = shallowRef(cloneRows(currentSource.value))
-    const previousColumnsSignature = shallowRef(createColumnsSignature(props.columns))
+    const previousColumnsSignature = shallowRef(createColumnsSignature(visibleColumns.value))
     const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
     const previousPinSignature = shallowRef(createTablePinSignature(props.pinMode, props.defaultPin, props.columns))
+    const previousVisibilitySignature = shallowRef(createTableVisibilitySignature(props.defaultHidden, props.columns))
     const tableActionTarget: TableRuntimeActionTarget = {
+      setColumnVisibility: async (columnKey, visible) => {
+        await commitVisibilityState({
+          ...visibilityState.value,
+          [columnKey]: visible,
+        })
+      },
       setColumnPin: async (columnKey, side) => {
         await commitPinState(setColumnPinState(pinState.value, columnKey, side, props.pinMode, props.columns))
       },
@@ -388,14 +404,14 @@ const SFCRevoGridTable = defineComponent({
       },
     }
 
-    const revoColumns = computed(() => props.columns.map((column, columnIndex) => {
+    const revoColumns = computed(() => visibleColumns.value.map((column) => {
       return createRevoColumn(
         column,
-        columnIndex,
+        column.index,
         getSortMeta(column.key, sortState.value),
         getPinSide(column.key, pinState.value),
         (event?: MouseEvent) => toggleColumnSort(column, event),
-        (event: MouseEvent) => openColumnMenu(column, columnIndex, event),
+        (event: MouseEvent) => openColumnMenu(column, column.index, event),
         hasColumnMenu(column),
         (h, cellProps) => {
           return props.renderCell({
@@ -421,12 +437,14 @@ const SFCRevoGridTable = defineComponent({
     })
 
     watch(
-      () => [props.renderVersion, props.source, props.columns, props.sortMode, props.defaultSort, props.pinMode, props.defaultPin, props.paging] as const,
+      () => [props.renderVersion, props.source, props.columns, props.sortMode, props.defaultSort, props.pinMode, props.defaultPin, props.defaultHidden, props.paging] as const,
       async () => {
         const nextBaseSource = cloneRows(props.source)
         const nextSortSignature = createTableSortSignature(props.sortMode, props.defaultSort, props.columns)
         const nextPinSignature = createTablePinSignature(props.pinMode, props.defaultPin, props.columns)
+        const nextVisibilitySignature = createTableVisibilitySignature(props.defaultHidden, props.columns)
         const pinChanged = previousPinSignature.value !== nextPinSignature
+        const visibilityChanged = previousVisibilitySignature.value !== nextVisibilitySignature
         if (previousSortSignature.value !== nextSortSignature) {
           sortState.value = resolveInitialSortState()
           previousSortSignature.value = nextSortSignature
@@ -434,6 +452,10 @@ const SFCRevoGridTable = defineComponent({
         if (pinChanged) {
           pinState.value = resolveInitialPinState()
           previousPinSignature.value = nextPinSignature
+        }
+        if (visibilityChanged) {
+          visibilityState.value = resolveInitialVisibilityState()
+          previousVisibilitySignature.value = nextVisibilitySignature
         }
 
         baseSource.value = nextBaseSource
@@ -446,13 +468,13 @@ const SFCRevoGridTable = defineComponent({
           previousRows: previousSource.value,
           nextRows: nextSource,
           previousColumnsSignature: previousColumnsSignature.value,
-          nextColumns: props.columns,
+          nextColumns: visibleColumns.value,
           rowKey: props.rowKey,
         })
-        if (pinChanged)
+        if (pinChanged || visibilityChanged)
           await resolveGridElement(gridRef.value)?.refresh?.('all')
         previousSource.value = cloneRows(nextSource)
-        previousColumnsSignature.value = createColumnsSignature(props.columns)
+        previousColumnsSignature.value = createColumnsSignature(visibleColumns.value)
         schedulePublicSurfaceSync()
       },
     )
@@ -490,6 +512,15 @@ const SFCRevoGridTable = defineComponent({
       persistTableState('pin', pinState.value)
       await nextTick()
       await resolveGridElement(gridRef.value)?.refresh?.('all')
+      schedulePublicSurfaceSync()
+    }
+
+    async function commitVisibilityState(nextVisibilityState: Record<string, boolean>): Promise<void> {
+      visibilityState.value = normalizePersistedVisibilityState(nextVisibilityState, {}, props.columns)
+      persistTableState('visibility', visibilityState.value)
+      await nextTick()
+      await resolveGridElement(gridRef.value)?.refresh?.('all')
+      previousColumnsSignature.value = createColumnsSignature(visibleColumns.value)
       schedulePublicSurfaceSync()
     }
 
@@ -552,6 +583,11 @@ const SFCRevoGridTable = defineComponent({
         props.columns,
         props.pinMode,
       )
+    }
+
+    function resolveInitialVisibilityState(): Record<string, boolean> {
+      const fallback = createInitialTableVisibility(props.defaultHidden, props.columns)
+      return normalizePersistedVisibilityState(readTableState('visibility', fallback), fallback, props.columns)
     }
 
     function readTableState<T>(section: string, fallback: T): T {
@@ -625,7 +661,7 @@ const SFCRevoGridTable = defineComponent({
         target: tableActionTarget,
         columnKey: column.key,
         columnIndex,
-        hideable: false,
+        hideable: true,
         pinnable: column.pinnable,
         pinMode: props.pinMode,
         pinState: getPinSide(column.key, pinState.value),
@@ -1173,6 +1209,43 @@ function normalizePersistedPinState(
   return items
 }
 
+export function createInitialTableVisibility<T extends { key: string }>(
+  defaultHidden: readonly string[],
+  columns: readonly T[],
+): Record<string, boolean> {
+  const columnKeys = new Set(columns.map(column => column.key))
+  return Object.fromEntries(
+    defaultHidden
+      .filter(key => columnKeys.has(key))
+      .map(key => [key, false]),
+  )
+}
+
+export function filterVisibleTableColumns<T extends { key: string }>(
+  columns: readonly T[],
+  visibility: Readonly<Record<string, boolean>>,
+): T[] {
+  return columns.filter(column => visibility[column.key] !== false)
+}
+
+function normalizePersistedVisibilityState<T extends { key: string }>(
+  value: unknown,
+  fallback: Record<string, boolean>,
+  columns: readonly T[],
+): Record<string, boolean> {
+  if (!isPlainObject(value))
+    return fallback
+
+  const columnKeys = new Set(columns.map(column => column.key))
+  const result: Record<string, boolean> = {}
+  for (const [key, visible] of Object.entries(value)) {
+    if (columnKeys.has(key) && typeof visible === 'boolean')
+      result[key] = visible
+  }
+
+  return result
+}
+
 function setColumnPinState(
   current: ComponentSFCTableColumnPinStateItem[],
   columnKey: string,
@@ -1680,6 +1753,13 @@ function createTablePinSignature(
     createPinStateSignature(defaultPin),
     createColumnsSignature(columns),
   ].join('|')
+}
+
+function createTableVisibilitySignature(
+  defaultHidden: readonly string[],
+  columns: SFCTableColumn[],
+): string {
+  return [defaultHidden.join(','), createColumnsSignature(columns)].join('|')
 }
 
 function resolveGridElement(value: { $el?: SFCRevoGridElement } | SFCRevoGridElement | null): SFCRevoGridElement | null {
