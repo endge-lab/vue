@@ -1,5 +1,5 @@
-import type { ComponentSFCRuntimeHost, EndgeStyleMatchNode, EndgeStyleSheetArtifact, RComponentSFC_IR } from '@endge/core'
-import { Endge } from '@endge/core'
+import type { ComponentSFCEventBoundary, ComponentSFCRuntimeHost, EndgeStyleMatchNode, EndgeStyleSheetArtifact, RComponentSFC_IR, SFCRenderInspectionSessionLike } from '@endge/core'
+import { Endge, ComponentSFCEventBoundary as EndgeComponentSFCEventBoundary } from '@endge/core'
 import type { SFCVueRenderContext, SFCVueRenderIteration } from '@/domain/types/sfc-render.type'
 import { evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
 
@@ -12,6 +12,8 @@ export function createSFCVueRenderContext(
   componentStack: readonly string[] = host?.entityIdentity ? [host.entityIdentity] : [],
   consumerScope = 'root',
   inheritedStyleArtifacts?: readonly EndgeStyleSheetArtifact[],
+  inheritedEventBoundary?: ComponentSFCEventBoundary | null,
+  inspection: SFCRenderInspectionSessionLike | null = null,
 ): SFCVueRenderContext {
   const lifecycleScope = host ? Endge.runtime.getRuntimeScopeByHost(host.id) : null
   const runtimeScopeIds: string[] = []
@@ -36,6 +38,11 @@ export function createSFCVueRenderContext(
     styleSiblingCount: 0,
     styleOwnerScopeId: ir?.style?.scopeId,
     runtimeScopeIds,
+    eventBoundary: inheritedEventBoundary ?? (ir
+      ? new EndgeComponentSFCEventBoundary(host, host?.entityIdentity ?? componentStack.at(-1) ?? 'component', ir.script.ports)
+      : null),
+    inspection,
+    inspectionParentId: null,
   }
   context.locals = evaluatePortLocals(ir, context)
   return context
@@ -66,6 +73,9 @@ export function extendSFCVueRenderContext(
     styleSiblingCount: context.styleSiblingCount,
     styleOwnerScopeId: context.styleOwnerScopeId,
     runtimeScopeIds: context.runtimeScopeIds,
+    eventBoundary: context.eventBoundary,
+    inspection: context.inspection,
+    inspectionParentId: context.inspectionParentId,
   }
 }
 

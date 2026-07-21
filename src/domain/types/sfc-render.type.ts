@@ -1,5 +1,6 @@
 import type {
   ComponentSFCRuntimeHost,
+  ComponentSFCEventBoundary,
   RComponentSFC_IR,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
@@ -10,6 +11,7 @@ import type {
   RuntimeHostRaphInputBinding,
   RuntimeHostRaphInputSource,
   RuntimeBoundaryPatch,
+  SFCRenderInspectionSessionLike,
   UIRenderAdapter,
   EndgeStyleMatchNode,
   EndgeStyleSheetArtifact,
@@ -63,6 +65,12 @@ export interface SFCVueRenderContext {
   styleOwnerScopeId: string | undefined
   /** Runtime lifecycle ancestry used by renderer boundary isolation. */
   runtimeScopeIds: readonly string[]
+  /** Mount-scoped semantic Event router for the current Component SFC artifact. */
+  eventBoundary?: ComponentSFCEventBoundary | null
+  /** Optional debug sink enabled by Configurator; null in normal runtime. */
+  inspection?: SFCRenderInspectionSessionLike | null
+  /** Parent live-instance id in the semantic inspection tree. */
+  inspectionParentId?: string | null
 }
 
 /** Structural runtime-state controller contract used by Vue render adapters. */
@@ -94,6 +102,7 @@ export interface SFCVueRenderAdapterProps {
   props?: Record<string, unknown>
   renderVersion?: number
   host?: ComponentSFCRuntimeHost | null
+  inspection?: SFCRenderInspectionSessionLike | null
 }
 
 /** Локальный источник входных props для runtime renderer-а. */
@@ -112,6 +121,7 @@ export type SFCVueRuntimeInputSource = RuntimeHostInputSource
 export interface SFCVueRuntimeRendererProps {
   host: ComponentSFCRuntimeHost | null
   input: SFCVueRuntimeInputSource
+  inspection?: SFCRenderInspectionSessionLike | null
 }
 
 /** Callback обновления materialized props из runtime bridge в Vue root. */

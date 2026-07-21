@@ -14,6 +14,7 @@ import type {
 import { extendSFCVueRenderContext, extendSFCVueStyleContext } from '@/ui/render/sfc/SFCRender_Context'
 import { evaluateSFCProps, evaluateSFCValue, isTruthySFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
 import { getEndgeDOMStyleClasses } from '@/model/style/endge-dom-style'
+import { createSFCInspectionAttrs, registerSFCInspectionElement } from '@/model/render/sfc/SFCVueRenderInspection'
 
 /** Выполняет общий SFC render pipeline вокруг primitive renderer-а. */
 export function SFCRender_Base(renderFn: SFCVueRenderFunction): SFCVueRenderFunction {
@@ -127,11 +128,16 @@ function renderOnce(
   input.context.styleSiblings.push(styleNode)
   const generatedClasses = getEndgeDOMStyleClasses(input.context.styleArtifacts, styleNode)
   if (generatedClasses.length > 0) props.class = [props.class, ...generatedClasses]
+  const inspectionId = input.context.inspection
+    ? registerSFCInspectionElement(input.node, props, input.context)
+    : null
   const attrs = {
     ...createSFCBaseAttrs(input.node, props, styleNode, input.context.runtimeScopeIds),
+    ...(inspectionId ? createSFCInspectionAttrs(input.context, inspectionId) : {}),
     ...input.attrs,
   }
   const childContext = extendSFCVueStyleContext(input.context, styleNode)
+  childContext.inspectionParentId = inspectionId ?? input.context.inspectionParentId
   const children = input.renderChildren(childContext)
 
   return renderFn({

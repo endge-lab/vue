@@ -19,6 +19,12 @@ export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) 
   if (!artifact?.payload.ir || !artifact.capabilities.includes('renderable'))
     return renderComponentError(input, `component:${identity}`)
 
+  const childBoundary = input.context.eventBoundary?.createChild(identity, artifact.payload.ir.script.ports, {
+    nodeId: input.node.id,
+    ref: literalString(input.node.props.ref),
+    componentIdentity: identity,
+    componentTag: input.node.componentTag ?? 'Component',
+  }) ?? null
   const childContext: SFCVueRenderContext = createSFCVueRenderContext(
     createChildProps(input.props),
     input.context.renderVersion,
@@ -27,8 +33,11 @@ export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) 
     [...input.context.componentStack, identity],
     `${input.context.consumerScope}/component:${input.node.id}:${identity}`,
     input.context.styleArtifacts,
+    childBoundary,
+    input.context.inspection,
   )
   childContext.styleParent = input.context.styleParent
+  childContext.inspectionParentId = input.context.inspectionParentId
 
   const children = renderSFCNodes(
     input.h,
@@ -52,6 +61,10 @@ function createChildProps(props: Record<string, unknown>): Record<string, unknow
   delete childProps.is
   delete childProps.identity
   return childProps
+}
+
+function literalString(value: { kind: string, value?: unknown } | undefined): string | undefined {
+  return value?.kind === 'literal' && typeof value.value === 'string' && value.value.trim() ? value.value.trim() : undefined
 }
 
 function renderComponentError(

@@ -79,5 +79,6 @@ function destroyBridge(): void {
     :props="renderProps"
     :render-version="renderVersion"
     :host="host"
+    :inspection="inspection ?? null"
   />
 </template>

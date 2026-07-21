@@ -16,8 +16,12 @@ import { SFC_VUE_RENDER_ADAPTER_REQUIRED_KEYS } from '@/domain/types/sfc-render.
 import { resolveSFCConditionState, SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
 import { evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
 import { SFCRender_Component } from '@/ui/render/sfc/SFCRender_Component'
+import { registerSFCInspectionDefinitionTree, registerSFCInspectionValueNode } from '@/model/render/sfc/SFCVueRenderInspection'
 
-const SFCRender_Structural: SFCVueRenderFunction = () => null
+const SFCRender_Structural: SFCVueRenderFunction = (input) => {
+  if (input.context.inspection) registerSFCInspectionDefinitionTree(input.node, input.context)
+  return null
+}
 const SFCRender_CompoundAdapter: SFCVueRenderFunction = (input) => {
   const renderFn = requireAdapterRenderer(input.node.tag as SFCVueRenderAdapterKey)
   return renderFn(input)
@@ -82,9 +86,13 @@ export function renderSFCNode(
   node: RComponentSFC_IR_Node,
   context: SFCVueRenderContext,
 ): SFCVueRenderResult {
-  if (node.kind === 'text') return node.value
+  if (node.kind === 'text') {
+    if (context.inspection) registerSFCInspectionValueNode(node, node.value, context)
+    return node.value
+  }
   if (node.kind === 'expression') {
     const value = evaluateSFCValue(node.value, context)
+    if (context.inspection) registerSFCInspectionValueNode(node, value, context)
     return value == null ? '' : String(value)
   }
 

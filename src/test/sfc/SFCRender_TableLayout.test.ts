@@ -74,6 +74,17 @@ describe('SFC Table layout', () => {
       lazy: false,
     })
   })
+
+  it('forwards Table Event boundary and selection mode to the native renderer', () => {
+    const table = renderTable({ 'selection-mode': 'multiple', ref: 'table' })
+    const grid = table.children as VNode[]
+
+    expect(grid[0]?.props).toMatchObject({
+      nodeId: 'test-table',
+      tableRef: 'table',
+      selectionMode: 'multiple',
+    })
+  })
 })
 
 function renderTable(props: Record<string, unknown> = {}): VNode {

@@ -7,6 +7,8 @@ import type {
   ComponentSFCTableSortDirection,
   ComponentSFCTableSortMode,
   ComponentSFCTableSortStateItem,
+  ComponentSFCEventBoundary,
+  ComponentSFCEventRuntimeSource,
   ContextMenuDescriptor,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_Node,
@@ -15,6 +17,9 @@ import type {
   TableColumnPinSide,
   TableColumnSortState,
   TableRuntimeActionTarget,
+  TableEventMap,
+  TableEventName,
+  TableSelectionMode,
   TableSortDirection,
 } from '@endge/core'
 import {
@@ -99,6 +104,11 @@ interface SFCTableCellRenderInput {
   cellProps: Record<string, unknown>
   rows: Record<string, unknown>[]
   rowOffset: number
+  selected: (row: Record<string, unknown>, rowIndex: number) => boolean
+  onClick: (row: Record<string, unknown>, rowIndex: number, columnKey: string, event: MouseEvent | KeyboardEvent) => void
+  onActivate: (row: Record<string, unknown>, rowIndex: number, columnKey: string, event: MouseEvent | KeyboardEvent) => void
+  onContextMenu: (row: Record<string, unknown>, rowIndex: number, columnKey: string, event: MouseEvent) => void
+  onKeydown: (row: Record<string, unknown>, rowIndex: number, columnKey: string, event: KeyboardEvent) => void
 }
 
 interface SFCTableCellAlignmentStyle {
@@ -202,7 +212,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   const columnMenuDescriptor = normalizeComponentSFCTableColumnMenu(input.node)
   const styleContract = createSFCTableStyleContract(input.context)
   const columns = collectTableColumns(input.node, input.context, sortDescriptor, pinDescriptor, styleContract)
-  const source = rows.map(row => normalizeRowSnapshot(row, rowKey))
+  const source = rows.map(row => ({ ...row }))
   const sortMode = normalizeComponentSFCTableSortMode(input.props['sort-mode'] ?? input.props.sortMode ?? sortDescriptor.mode)
   const pinMode = normalizeComponentSFCTableColumnPinMode(input.props['column-pin'] ?? input.props.columnPin ?? pinDescriptor.mode)
   const tableId = normalizeText(input.props.id ?? input.props.tableId ?? input.attrs.id, '')
@@ -234,7 +244,11 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
   }, [
     input.h(SFCRevoGridTable as any, {
       boundaryId: input.node.id,
+      nodeId: input.node.id,
+      tableRef: normalizeOptionalText(input.props.ref ?? input.attrs.ref),
       tableId,
+      eventBoundary: input.context.eventBoundary ?? null,
+      selectionMode: normalizeSelectionMode(input.props['selection-mode'] ?? input.props.selectionMode),
       runtimeState: input.context.runtimeState,
       columns,
       source,
@@ -259,6 +273,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
           fallbackH: input.h,
           context: tableContext,
           cellAlignmentStyle,
+          rowKey,
         })
       },
     }),
@@ -272,9 +287,25 @@ const SFCRevoGridTable = defineComponent({
       type: String,
       required: true,
     },
+    nodeId: {
+      type: String,
+      required: true,
+    },
+    tableRef: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
     tableId: {
       type: String,
       default: '',
+    },
+    eventBoundary: {
+      type: Object as PropType<ComponentSFCEventBoundary | null>,
+      default: null,
+    },
+    selectionMode: {
+      type: String as PropType<TableSelectionMode>,
+      default: 'none',
     },
     runtimeState: {
       type: Object as PropType<SFCVueRuntimeStateController | null>,
@@ -369,6 +400,10 @@ const SFCRevoGridTable = defineComponent({
     const defaultPinState = computed(() => createInitialPinState(props.pinMode, props.defaultPin, props.columns))
     const pinState = shallowRef(resolveInitialPinState())
     const visibilityState = shallowRef(resolveInitialVisibilityState())
+    const selectedRowIds = shallowRef<Set<string>>(new Set())
+    const selectionAnchorId = ref<string | null>(null)
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    let mounted = false
     const visibleColumns = computed(() => filterVisibleTableColumns(props.columns, visibilityState.value))
     const currentSource = shallowRef(createStyledSource(baseSource.value))
     const pageCount = computed(() => Math.max(1, Math.ceil(baseSource.value.length / pageSize.value)))
@@ -377,6 +412,7 @@ const SFCRevoGridTable = defineComponent({
     const previousSortSignature = shallowRef(createTableSortSignature(props.sortMode, props.defaultSort, props.columns))
     const previousPinSignature = shallowRef(createTablePinSignature(props.pinMode, props.defaultPin, props.columns))
     const previousVisibilitySignature = shallowRef(createTableVisibilitySignature(props.defaultHidden, props.columns))
+    const previousOrderSignature = shallowRef(props.columns.map(column => column.key).join('|'))
     const tableActionTarget: TableRuntimeActionTarget = {
       setColumnVisibility: async (columnKey, visible) => {
         await commitVisibilityState({
@@ -420,6 +456,11 @@ const SFCRevoGridTable = defineComponent({
             cellProps,
             rows: currentSource.value,
             rowOffset: props.paging === 'pages' ? pageIndex.value * pageSize.value : 0,
+            selected: (row, rowIndex) => selectedRowIds.value.has(getRowId(row, rowIndex)),
+            onClick: selectRow,
+            onActivate: activateRow,
+            onContextMenu: requestRowContextMenu,
+            onKeydown: handleRowKeydown,
           })
         },
       )
@@ -429,9 +470,13 @@ const SFCRevoGridTable = defineComponent({
       applyPatch: applyRuntimePatch,
     })
 
-    onMounted(schedulePublicSurfaceSync)
+    onMounted(() => {
+      mounted = true
+      schedulePublicSurfaceSync()
+    })
 
     onBeforeUnmount(() => {
+      if (resizeTimer) clearTimeout(resizeTimer)
       closeEndgeContextMenu(props.boundaryId)
       unregisterBoundary?.()
     })
@@ -459,6 +504,7 @@ const SFCRevoGridTable = defineComponent({
         }
 
         baseSource.value = nextBaseSource
+        reconcileSelection(nextBaseSource)
         clampPageIndex(nextBaseSource.length)
         const nextSource = createStyledSource(nextBaseSource)
         currentSource.value = nextSource
@@ -490,6 +536,7 @@ const SFCRevoGridTable = defineComponent({
     }
 
     async function commitSortState(nextSortState: ComponentSFCTableSortStateItem[]): Promise<void> {
+      const previous = JSON.stringify(sortState.value)
       sortState.value = nextSortState
       persistTableState('sort', nextSortState)
       pageIndex.value = 0
@@ -505,23 +552,45 @@ const SFCRevoGridTable = defineComponent({
         await grid.refresh?.('all')
       }
       schedulePublicSurfaceSync()
+      if (previous !== JSON.stringify(nextSortState)) {
+        emitTableEvent('sortChanged', {
+          tableId: effectiveTableId(),
+          sort: nextSortState.map(item => ({ columnKey: item.key, direction: item.direction })),
+        })
+      }
     }
 
     async function commitPinState(nextPinState: ComponentSFCTableColumnPinStateItem[]): Promise<void> {
+      const previous = JSON.stringify(pinState.value)
       pinState.value = normalizePinState(nextPinState, props.columns, props.pinMode)
       persistTableState('pin', pinState.value)
       await nextTick()
       await resolveGridElement(gridRef.value)?.refresh?.('all')
       schedulePublicSurfaceSync()
+      if (previous !== JSON.stringify(pinState.value)) {
+        emitTableEvent('columnPinChanged', {
+          tableId: effectiveTableId(),
+          left: pinState.value.filter(item => item.side === 'left').map(item => item.key),
+          right: pinState.value.filter(item => item.side === 'right').map(item => item.key),
+        })
+      }
     }
 
     async function commitVisibilityState(nextVisibilityState: Record<string, boolean>): Promise<void> {
+      const previous = JSON.stringify(visibilityState.value)
       visibilityState.value = normalizePersistedVisibilityState(nextVisibilityState, {}, props.columns)
       persistTableState('visibility', visibilityState.value)
       await nextTick()
       await resolveGridElement(gridRef.value)?.refresh?.('all')
       previousColumnsSignature.value = createColumnsSignature(visibleColumns.value)
       schedulePublicSurfaceSync()
+      if (previous !== JSON.stringify(visibilityState.value)) {
+        emitTableEvent('columnVisibilityChanged', {
+          tableId: effectiveTableId(),
+          visibility: { ...visibilityState.value },
+          hiddenColumnKeys: Object.entries(visibilityState.value).filter(([, visible]) => !visible).map(([key]) => key),
+        })
+      }
     }
 
     function createStyledSource(rows: readonly Record<string, unknown>[]): Record<string, unknown>[] {
@@ -538,6 +607,8 @@ const SFCRevoGridTable = defineComponent({
     }
 
     async function commitPagination(nextPageIndex: number, nextPageSize = pageSize.value): Promise<void> {
+      const previousPageIndex = pageIndex.value
+      const previousPageSize = pageSize.value
       pageSize.value = normalizePositiveInteger(nextPageSize, props.pageSize)
       pageIndex.value = Math.min(
         normalizeNonNegativeInteger(nextPageIndex, 0),
@@ -554,6 +625,14 @@ const SFCRevoGridTable = defineComponent({
         await grid.refresh?.('all')
       }
       schedulePublicSurfaceSync()
+      if (previousPageIndex !== pageIndex.value || previousPageSize !== pageSize.value) {
+        emitTableEvent('pageChanged', {
+          tableId: effectiveTableId(),
+          pageIndex: pageIndex.value,
+          pageSize: pageSize.value,
+          pageCount: pageCount.value,
+        })
+      }
     }
 
     function clampPageIndex(rowCount = baseSource.value.length): void {
@@ -719,6 +798,168 @@ const SFCRevoGridTable = defineComponent({
       return true
     }
 
+    function effectiveTableId(): string {
+      return props.tableId || props.boundaryId
+    }
+
+    function eventSource(): ComponentSFCEventRuntimeSource {
+      return {
+        nodeId: props.nodeId,
+        ref: props.tableRef ?? undefined,
+        componentTag: 'Table',
+        target: {
+          type: 'component.table',
+          identity: effectiveTableId(),
+          value: tableActionTarget,
+        },
+      }
+    }
+
+    function emitTableEvent<TName extends TableEventName>(name: TName, payload: TableEventMap[TName]): void {
+      void props.eventBoundary?.emitChild(eventSource(), name, payload)
+    }
+
+    function getRowId(row: Record<string, unknown>, rowIndex: number): string {
+      return normalizeText(row[props.rowKey], String(rowIndex))
+    }
+
+    function selectRow(
+      row: Record<string, unknown>,
+      rowIndex: number,
+      _columnKey: string,
+      event: MouseEvent | KeyboardEvent,
+    ): void {
+      if (props.selectionMode === 'none') return
+      const rowId = getRowId(row, rowIndex)
+      const next = new Set(selectedRowIds.value)
+      if (props.selectionMode === 'single') {
+        next.clear()
+        next.add(rowId)
+      }
+      else if (event.shiftKey && selectionAnchorId.value) {
+        const rows = currentSource.value
+        const from = rows.findIndex((item, index) => getRowId(item, index) === selectionAnchorId.value)
+        const localIndex = props.paging === 'pages' ? rowIndex - pageIndex.value * pageSize.value : rowIndex
+        if (from >= 0 && localIndex >= 0) {
+          if (!event.metaKey && !event.ctrlKey) next.clear()
+          for (let index = Math.min(from, localIndex); index <= Math.max(from, localIndex); index += 1)
+            next.add(getRowId(rows[index]!, index + (props.paging === 'pages' ? pageIndex.value * pageSize.value : 0)))
+        }
+      }
+      else if (event.metaKey || event.ctrlKey) {
+        if (next.has(rowId)) next.delete(rowId)
+        else next.add(rowId)
+      }
+      else {
+        next.clear()
+        next.add(rowId)
+      }
+      selectionAnchorId.value = rowId
+      commitSelection(next)
+    }
+
+    function commitSelection(next: Set<string>): void {
+      if (props.selectionMode === 'none') return
+      const previous = selectedRowIds.value
+      const addedRowIds = [...next].filter(id => !previous.has(id))
+      const removedRowIds = [...previous].filter(id => !next.has(id))
+      if (addedRowIds.length === 0 && removedRowIds.length === 0) return
+      selectedRowIds.value = next
+      const rowsById = new Map(baseSource.value.map((row, index) => [getRowId(row, index), row] as const))
+      const orderedIds = [...next].filter(id => rowsById.has(id))
+      emitTableEvent('selectionChanged', {
+        tableId: effectiveTableId(),
+        mode: props.selectionMode,
+        selectedRowIds: orderedIds,
+        selectedRows: orderedIds.map(id => rowsById.get(id)!),
+        addedRowIds,
+        removedRowIds,
+      })
+      void nextTick(() => resolveGridElement(gridRef.value)?.refresh?.('all'))
+    }
+
+    function reconcileSelection(rows: Record<string, unknown>[]): void {
+      if (props.selectionMode === 'none' || selectedRowIds.value.size === 0) return
+      const available = new Set(rows.map((row, index) => getRowId(row, index)))
+      commitSelection(new Set([...selectedRowIds.value].filter(id => available.has(id))))
+    }
+
+    function activateRow(
+      row: Record<string, unknown>,
+      rowIndex: number,
+      columnKey: string,
+      event: MouseEvent | KeyboardEvent,
+    ): void {
+      emitTableEvent('rowActivated', {
+        tableId: effectiveTableId(),
+        rowId: getRowId(row, rowIndex),
+        rowIndex,
+        row,
+        columnKey,
+        activation: event instanceof KeyboardEvent ? 'keyboard' : 'pointer',
+      })
+    }
+
+    function requestRowContextMenu(
+      row: Record<string, unknown>,
+      rowIndex: number,
+      columnKey: string,
+      event: MouseEvent,
+    ): void {
+      event.preventDefault()
+      emitTableEvent('rowContextMenuRequested', {
+        tableId: effectiveTableId(),
+        rowId: getRowId(row, rowIndex),
+        rowIndex,
+        row,
+        columnKey,
+        anchor: { x: event.clientX, y: event.clientY },
+      })
+    }
+
+    function handleRowKeydown(
+      row: Record<string, unknown>,
+      rowIndex: number,
+      columnKey: string,
+      event: KeyboardEvent,
+    ): void {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        activateRow(row, rowIndex, columnKey, event)
+      }
+      else if (event.key === ' ') {
+        event.preventDefault()
+        selectRow(row, rowIndex, columnKey, event)
+      }
+    }
+
+    function handleColumnResize(event: CustomEvent<Record<number, Record<string, unknown>>>): void {
+      if (!mounted) return
+      const columns = Object.values(event.detail ?? {})
+      const sizes = Object.fromEntries(columns
+        .map(column => [String(column.prop ?? ''), Number(column.size)] as const)
+        .filter(([key, size]) => key && Number.isFinite(size)))
+      const changedColumnKey = Object.keys(sizes)[0] ?? null
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null
+        emitTableEvent('columnSizeChanged', { tableId: effectiveTableId(), sizes, changedColumnKey })
+      }, 80)
+    }
+
+    function handleColumnsSet(event: CustomEvent<{ columns?: { columns?: Record<string, Array<Record<string, unknown>>> } }>): void {
+      if (!mounted) return
+      const groups = event.detail?.columns?.columns ?? {}
+      const columnKeys = ['colPinStart', 'rgCol', 'colPinEnd']
+        .flatMap(group => groups[group] ?? [])
+        .map(column => String(column.prop ?? ''))
+        .filter(Boolean)
+      const signature = columnKeys.join('|')
+      if (!signature || signature === previousOrderSignature.value) return
+      previousOrderSignature.value = signature
+      emitTableEvent('columnOrderChanged', { tableId: effectiveTableId(), columnKeys })
+    }
+
     return () => vueH('div', {
       class: 'endge-native-table',
       'data-paging': props.paging,
@@ -737,12 +978,15 @@ const SFCRevoGridTable = defineComponent({
         exporting: true,
         theme: props.theme,
         resize: true,
+        canMoveColumns: true,
         range: false,
         readonly: true,
         useAutofill: false,
         style: 'height:100%;min-height:0;flex:1 1 0%;',
         onAfterrender: schedulePublicSurfaceSync,
         onAfterheaderrender: schedulePublicSurfaceSync,
+        onAftercolumnresize: handleColumnResize,
+        onAftercolumnsset: handleColumnsSet,
       }),
       props.paging === 'pages'
         ? vueH(NativeTablePagination, {
@@ -1526,16 +1770,20 @@ function renderTableCell(input: SFCTableCellRenderInput & {
   fallbackH: SFCVueRenderH
   context: SFCVueRenderContext
   cellAlignmentStyle: SFCTableCellAlignmentStyle
+  rowKey: string
 }): ReturnType<SFCVueRenderH> {
   const h = input.h ?? input.fallbackH
   const localRowIndex = normalizeNumber(input.cellProps.rowIndex, 0)
   const rowIndex = input.rowOffset + localRowIndex
   const row = normalizeCellRow(input.rows, input.cellProps, localRowIndex)
+  const rowIdentity = row[input.rowKey] ?? rowIndex
   const cellContext = extendSFCVueRenderContext(input.context, {
     row,
     rowIndex,
+    rowKey: rowIdentity,
+    columnKey: input.column.key,
     value: row[input.column.key],
-  }, input.context.iteration, `${input.context.consumerScope}/row:${rowIndex}/column:${input.column.key}`)
+  }, input.context.iteration, `${input.context.consumerScope}/row:${String(rowIdentity)}/column:${input.column.key}`)
   const children = renderSFCNodes(h, input.column.cellNodes, cellContext)
   const styleSurfaces = getSFCTableCellStyleSurfaces(row, input.column.index)
   const contentAttrs = styleSurfaces?.cellContent.attrs
@@ -1543,14 +1791,28 @@ function renderTableCell(input: SFCTableCellRenderInput & {
   return h('div', {
     part: contentAttrs?.part ?? 'cell-content',
     'data-endge-part': contentAttrs?.['data-endge-part'] ?? 'cell-content',
-    class: ['endge-sfc-table-cell-content', contentAttrs?.class],
+    class: [
+      'endge-sfc-table-cell-content',
+      input.selected(row, rowIndex)
+        ? 'endge-sfc-table-cell-content--selected'
+        : '',
+      contentAttrs?.class,
+    ],
+    tabindex: 0,
+    'aria-selected': input.selected(row, rowIndex),
     style: {
       display: 'flex',
       ...input.cellAlignmentStyle,
       width: '100%',
       height: '100%',
       minWidth: 0,
+      background: input.selected(row, rowIndex) ? 'var(--endge-table-selection, rgba(59, 130, 246, 0.14))' : undefined,
+      outline: 'none',
     },
+    onClick: (event: MouseEvent) => input.onClick(row, rowIndex, input.column.key, event),
+    onDblclick: (event: MouseEvent) => input.onActivate(row, rowIndex, input.column.key, event),
+    onContextmenu: (event: MouseEvent) => input.onContextMenu(row, rowIndex, input.column.key, event),
+    onKeydown: (event: KeyboardEvent) => input.onKeydown(row, rowIndex, input.column.key, event),
   }, children)
 }
 
@@ -1821,20 +2083,13 @@ function replaceRowSnapshot(
     return rows
 
   const result = cloneRows(rows)
-  const normalized = normalizeRowSnapshot(nextRow, rowKey)
+  const normalized = { ...nextRow }
   const nextRowId = normalized[rowKey]
   const targetIndex = nextRowId == null
     ? rowIndex
     : result.findIndex(row => Object.is(row[rowKey], nextRowId))
   result[targetIndex >= 0 ? targetIndex : rowIndex] = normalized
   return result
-}
-
-function normalizeRowSnapshot(row: Record<string, unknown>, rowKey: string): Record<string, unknown> {
-  return {
-    ...row,
-    rowId: row[rowKey] == null ? String(row.__index ?? '') : String(row[rowKey]),
-  }
 }
 
 function normalizeCellRow(
@@ -1849,6 +2104,15 @@ function normalizeCellRow(
 function normalizeText(value: unknown, fallback: string): string {
   const source = String(value ?? '').trim()
   return source || fallback
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+  const source = String(value ?? '').trim()
+  return source || null
+}
+
+function normalizeSelectionMode(value: unknown): TableSelectionMode {
+  return value === 'single' || value === 'multiple' ? value : 'none'
 }
 
 function normalizeNumber(value: unknown, fallback: number): number {
