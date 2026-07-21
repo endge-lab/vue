@@ -11,6 +11,7 @@ import type {
   ComponentSFCEventRuntimeSource,
   ContextMenuDescriptor,
   RComponentSFC_IR_ElementNode,
+  RComponentSFC_IR_EventBinding,
   RComponentSFC_IR_Node,
   RuntimeBoundaryPatch,
   TableColumnActionContext,
@@ -248,6 +249,7 @@ export const SFCRender_Table: SFCVueRenderFunction = SFCRender_Base((input) => {
       tableRef: normalizeOptionalText(input.props.ref ?? input.attrs.ref),
       tableId,
       eventBoundary: input.context.eventBoundary ?? null,
+      eventBindings: input.node.events ?? [],
       selectionMode: normalizeSelectionMode(input.props['selection-mode'] ?? input.props.selectionMode),
       runtimeState: input.context.runtimeState,
       columns,
@@ -302,6 +304,10 @@ const SFCRevoGridTable = defineComponent({
     eventBoundary: {
       type: Object as PropType<ComponentSFCEventBoundary | null>,
       default: null,
+    },
+    eventBindings: {
+      type: Array as PropType<RComponentSFC_IR_EventBinding[]>,
+      default: () => [],
     },
     selectionMode: {
       type: String as PropType<TableSelectionMode>,
@@ -816,7 +822,7 @@ const SFCRevoGridTable = defineComponent({
     }
 
     function emitTableEvent<TName extends TableEventName>(name: TName, payload: TableEventMap[TName]): void {
-      void props.eventBoundary?.emitChild(eventSource(), name, payload)
+      void props.eventBoundary?.routeChild(eventSource(), name, payload, props.eventBindings)
     }
 
     function getRowId(row: Record<string, unknown>, rowIndex: number): string {

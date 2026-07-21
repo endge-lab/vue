@@ -24,7 +24,7 @@ export const SFCRender_Component: SFCVueRenderFunction = SFCRender_Base((input) 
     ref: literalString(input.node.props.ref),
     componentIdentity: identity,
     componentTag: input.node.componentTag ?? 'Component',
-  }) ?? null
+  }, input.node.events ?? []) ?? null
   const childContext: SFCVueRenderContext = createSFCVueRenderContext(
     createChildProps(input.props),
     input.context.renderVersion,

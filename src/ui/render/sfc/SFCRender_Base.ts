@@ -1,8 +1,10 @@
 import type {
+  ComponentSFCEventRuntimeSource,
   RComponentSFC_IR_ElementNode,
   RComponentSFC_IR_ForDirective,
   RComponentSFC_IR_Value,
 } from '@endge/core'
+import { getComponentSFCIntrinsicEventDefinitions } from '@endge/core'
 import type { EndgeStyleMatchNode } from '@endge/core'
 import type {
   SFCVueRenderConditionState,
@@ -133,6 +135,7 @@ function renderOnce(
     : null
   const attrs = {
     ...createSFCBaseAttrs(input.node, props, styleNode, input.context.runtimeScopeIds),
+    ...createSFCEventAttrs(input.node, props, input.context),
     ...(inspectionId ? createSFCInspectionAttrs(input.context, inspectionId) : {}),
     ...input.attrs,
   }
@@ -147,6 +150,90 @@ function renderOnce(
     props,
     attrs,
   })
+}
+
+function createSFCEventAttrs(
+  node: RComponentSFC_IR_ElementNode,
+  props: Record<string, unknown>,
+  context: SFCVueRenderContext,
+): Record<string, unknown> {
+  const boundary = context.eventBoundary
+  if (!boundary) return {}
+  const source: ComponentSFCEventRuntimeSource = {
+    nodeId: node.id,
+    ref: typeof props.ref === 'string' && props.ref.trim() ? props.ref.trim() : undefined,
+    componentTag: node.componentTag ?? node.tag,
+    target: {
+      type: 'component.node',
+      identity: String(props.id ?? props.ref ?? node.id),
+      value: null,
+    },
+  }
+  const attrs: Record<string, unknown> = {}
+  for (const definition of getComponentSFCIntrinsicEventDefinitions(node.tag)) {
+    const bindings = (node.events ?? []).filter(binding => binding.name === definition.name)
+    const observed = boundary.observesChild(source, definition.name)
+    if (bindings.length === 0 && !observed) continue
+    const modifiers = new Set(bindings.flatMap(binding => binding.modifiers))
+    const propName = vueEventPropName(definition.name, {
+      capture: modifiers.has('capture'),
+      passive: modifiers.has('passive'),
+      once: bindings.length > 0 && bindings.every(binding => binding.modifiers.includes('once')) && !observed,
+    })
+    attrs[propName] = (event: Event) => {
+      const activeBindings = bindings.filter(binding => !binding.modifiers.includes('self') || event.target === event.currentTarget)
+      if (activeBindings.length === 0 && !observed) return
+      const activeModifiers = new Set(activeBindings.flatMap(binding => binding.modifiers))
+      if (activeModifiers.has('prevent') && event.cancelable) event.preventDefault()
+      if (activeModifiers.has('stop')) event.stopPropagation()
+      const runtimeSource: ComponentSFCEventRuntimeSource = {
+        ...source,
+        target: source.target ? { ...source.target, value: event.currentTarget } : undefined,
+      }
+      void boundary.routeChild(runtimeSource, definition.name, normalizeIntrinsicEvent(event), activeBindings)
+    }
+  }
+  return attrs
+}
+
+function vueEventPropName(
+  name: string,
+  options: { capture: boolean, passive: boolean, once: boolean },
+): string {
+  return `on${name.charAt(0).toUpperCase()}${name.slice(1)}${options.once ? 'Once' : ''}${options.capture ? 'Capture' : ''}${options.passive ? 'Passive' : ''}`
+}
+
+function normalizeIntrinsicEvent(event: Event): Record<string, unknown> {
+  const source = event as Event & Record<string, unknown>
+  const target = event.target as { value?: unknown, checked?: unknown } | null
+  const modifiers = {
+    alt: source.altKey === true,
+    ctrl: source.ctrlKey === true,
+    meta: source.metaKey === true,
+    shift: source.shiftKey === true,
+  }
+  const payload: Record<string, unknown> = { type: event.type, modifiers }
+  if ('clientX' in source) {
+    payload.x = Number(source.clientX ?? 0)
+    payload.y = Number(source.clientY ?? 0)
+    payload.button = Number(source.button ?? 0)
+    payload.buttons = Number(source.buttons ?? 0)
+    payload.pointerType = typeof source.pointerType === 'string' ? source.pointerType : 'mouse'
+  }
+  if ('key' in source) {
+    payload.key = String(source.key ?? '')
+    payload.code = String(source.code ?? '')
+    payload.repeat = source.repeat === true
+  }
+  if ('deltaX' in source) {
+    payload.deltaX = Number(source.deltaX ?? 0)
+    payload.deltaY = Number(source.deltaY ?? 0)
+  }
+  if (target && ('value' in target || 'checked' in target)) {
+    payload.value = target.value
+    if (typeof target.checked === 'boolean') payload.checked = target.checked
+  }
+  return payload
 }
 
 function renderForDirective(
