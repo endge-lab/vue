@@ -68,7 +68,19 @@ export function readSFCPath(path: string, context: SFCVueRenderContext): unknown
       ? context.locals[head.key]
       : context.props[head.key]
 
-  return tail.reduce<unknown>((current, segment) => {
+  return readSFCObjectPathSegments(root, tail)
+}
+
+/** Читает относительный DataPath, включая array selectors, из переданного объекта. */
+export function readSFCObjectPath(path: string, source: unknown): unknown {
+  return readSFCObjectPathSegments(source, parseSFCPath(path))
+}
+
+function readSFCObjectPathSegments(
+  source: unknown,
+  segments: ReturnType<DataPath['segments']>,
+): unknown {
+  return segments.reduce<unknown>((current, segment) => {
     if (current == null) return undefined
 
     if (segment.key != null) {
@@ -90,7 +102,7 @@ export function readSFCPath(path: string, context: SFCVueRenderContext): unknown
     }
 
     return undefined
-  }, root)
+  }, source)
 }
 
 /**

@@ -4,6 +4,7 @@ import { createSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
 import {
   evaluateSFCExpression,
   evaluateSFCValue,
+  readSFCObjectPath,
   readSFCPath,
 } from '@/ui/render/sfc/SFCRender_Evaluator'
 
@@ -95,6 +96,10 @@ describe('SFCRender_Evaluator', () => {
     expect(evaluateSFCExpression("row.departureLeg.attributes[name='ACTail'].text", context)).toBe(
       '73151',
     )
+    expect(readSFCObjectPath(
+      "departureLeg.attributes[name='ACTail'].text",
+      context.locals.row,
+    )).toBe('73151')
   })
 
   it('reads nested selectors containing spaces', () => {

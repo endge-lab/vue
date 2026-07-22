@@ -44,7 +44,7 @@ import type {
 } from '@/domain/types/sfc-render.type'
 import { SFCRender_Base } from '@/ui/render/sfc/SFCRender_Base'
 import { extendSFCVueRenderContext } from '@/ui/render/sfc/SFCRender_Context'
-import { evaluateSFCProps, evaluateSFCValue } from '@/ui/render/sfc/SFCRender_Evaluator'
+import { evaluateSFCProps, evaluateSFCValue, readSFCObjectPath } from '@/ui/render/sfc/SFCRender_Evaluator'
 import { renderSFCNodes } from '@/ui/render/sfc/SFCRender_Node'
 import {
   normalizeSFCTableCellAlignment,
@@ -1761,15 +1761,7 @@ function parseTimeTimestamp(value: unknown): number {
 }
 
 function readRowPath(row: Record<string, unknown>, path: string): unknown {
-  const segments = String(path ?? '').split('.').map(part => part.trim()).filter(Boolean)
-  if (segments.length === 0)
-    return undefined
-
-  return segments.reduce<unknown>((current, segment) => {
-    if (current == null || typeof current !== 'object')
-      return undefined
-    return (current as Record<string, unknown>)[segment]
-  }, row)
+  return readSFCObjectPath(path, row)
 }
 
 function renderTableCell(input: SFCTableCellRenderInput & {
