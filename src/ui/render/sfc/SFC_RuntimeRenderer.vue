@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { Endge } from '@endge/core'
-import { onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
+import { onBeforeUnmount, provide, ref, shallowRef, watch } from 'vue'
 import type { SFCVueRuntimeRendererProps } from '@/domain/types/sfc-render.type'
 import { SFCVueRuntimeBridge } from '@/model/render/sfc/SFCVueRuntimeBridge'
 import {
@@ -19,7 +18,6 @@ provide(SFCVueBoundaryRegistryKey, boundaryRegistry)
 
 let bridge: SFCVueRuntimeBridge | null = null
 let bridgeHost: SFCVueRuntimeRendererProps['host'] = null
-let unsubscribeI18n: (() => void) | null = null
 
 watch(
   () => [props.host, props.input] as const,
@@ -56,14 +54,6 @@ watch(
 
 onBeforeUnmount(() => {
   destroyBridge()
-  unsubscribeI18n?.()
-  unsubscribeI18n = null
-})
-
-onMounted(() => {
-  unsubscribeI18n = Endge.i18n.subscribe(() => {
-    renderVersion.value++
-  })
 })
 
 function destroyBridge(): void {

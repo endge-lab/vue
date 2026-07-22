@@ -454,7 +454,7 @@ function evaluateCallExpression(
   if (args === UNSUPPORTED_EXPRESSION) return args
 
   if (callee.type === 'Identifier') {
-    return callSafeGlobal(readIdentifierName(callee), args)
+    return callSafeGlobal(readIdentifierName(callee), args, context)
   }
 
   if (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression') {
@@ -507,8 +507,15 @@ function evaluateCallArguments(
 function callSafeGlobal(
   name: string | typeof UNSUPPORTED_EXPRESSION,
   args: unknown[],
+  context: SFCVueRenderContext,
 ): SFCExpressionResult {
   if (name === UNSUPPORTED_EXPRESSION) return name
+  if (name === 't') {
+    if (typeof args[0] !== 'string' || args.length > 2)
+      return UNSUPPORTED_EXPRESSION
+    const fallback = args[1] == null ? undefined : String(args[1])
+    return context.host?.translate(args[0], fallback) ?? fallback ?? `{{${args[0]}}}`
+  }
   if (name === 'Boolean') return Boolean(args[0])
   if (name === 'Number') return Number(args[0])
   if (name === 'String') return String(args[0] ?? '')
