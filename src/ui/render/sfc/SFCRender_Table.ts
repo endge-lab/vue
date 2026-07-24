@@ -396,6 +396,7 @@ const SFCRevoGridTable = defineComponent({
     const gridRef = ref<{ $el?: SFCRevoGridElement } | SFCRevoGridElement | null>(null)
     const boundaryRegistry = inject(SFCVueBoundaryRegistryKey, null)
     const baseSource = shallowRef(cloneRows(props.source))
+    const stableColumns = shallowRef(props.columns)
     const tableStateKey = computed(() => props.tableId ? `table:${props.tableId}` : null)
     const missingTableIdWarned = ref(false)
     const initialPagination = readTableState('pagination', { pageIndex: 0, pageSize: props.pageSize })
@@ -411,8 +412,10 @@ const SFCRevoGridTable = defineComponent({
     const selectedRowIds = shallowRef<Set<string>>(new Set())
     const selectionAnchorId = ref<string | null>(null)
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    let renderRefreshFrame: number | null = null
+    let currentRenderCell = props.renderCell
     let mounted = false
-    const visibleColumns = computed(() => filterVisibleTableColumns(props.columns, visibilityState.value))
+    const visibleColumns = computed(() => filterVisibleTableColumns(stableColumns.value, visibilityState.value))
     const currentSource = shallowRef(createStyledSource(baseSource.value))
     const pageCount = computed(() => Math.max(1, Math.ceil(baseSource.value.length / pageSize.value)))
     const previousSource = shallowRef(cloneRows(currentSource.value))
@@ -421,6 +424,8 @@ const SFCRevoGridTable = defineComponent({
     const previousPinSignature = shallowRef(createTablePinSignature(props.pinMode, props.defaultPin, props.columns))
     const previousVisibilitySignature = shallowRef(createTableVisibilitySignature(props.defaultHidden, props.columns))
     const previousOrderSignature = shallowRef(props.columns.map(column => column.key).join('|'))
+    const previousStyleContract = shallowRef(props.styleContract)
+    const previousPaging = shallowRef(props.paging)
     const tableActionTarget: TableRuntimeActionTarget = {
       setColumnVisibility: async (columnKey, visible) => {
         await commitVisibilityState({
@@ -458,7 +463,7 @@ const SFCRevoGridTable = defineComponent({
         (event: MouseEvent) => openColumnMenu(column, column.index, event),
         hasColumnMenu(column),
         (h, cellProps) => {
-          return props.renderCell({
+          return currentRenderCell({
             h,
             column,
             cellProps,
@@ -484,7 +489,12 @@ const SFCRevoGridTable = defineComponent({
     })
 
     onBeforeUnmount(() => {
+      mounted = false
       if (resizeTimer) clearTimeout(resizeTimer)
+      if (renderRefreshFrame != null) {
+        cancelAnimationFrame(renderRefreshFrame)
+        renderRefreshFrame = null
+      }
       closeEndgeContextMenu(props.boundaryId)
       unregisterBoundary?.()
     })
@@ -492,13 +502,21 @@ const SFCRevoGridTable = defineComponent({
     watch(
       () => [props.renderVersion, props.source, props.columns, props.sortMode, props.defaultSort, props.pinMode, props.defaultPin, props.defaultHidden, props.paging] as const,
       async () => {
+        currentRenderCell = props.renderCell
         const nextBaseSource = cloneRows(props.source)
+        const columnsChanged = !areEquivalentTableColumns(stableColumns.value, props.columns)
+        const styleChanged = !areEquivalentTableStyleContracts(previousStyleContract.value, props.styleContract)
+        const pagingChanged = previousPaging.value !== props.paging
+        const changedRows = collectChangedRows(baseSource.value, nextBaseSource, props.rowKey)
+        if (columnsChanged)
+          stableColumns.value = props.columns
         const nextSortSignature = createTableSortSignature(props.sortMode, props.defaultSort, props.columns)
         const nextPinSignature = createTablePinSignature(props.pinMode, props.defaultPin, props.columns)
         const nextVisibilitySignature = createTableVisibilitySignature(props.defaultHidden, props.columns)
+        const sortChanged = previousSortSignature.value !== nextSortSignature
         const pinChanged = previousPinSignature.value !== nextPinSignature
         const visibilityChanged = previousVisibilitySignature.value !== nextVisibilitySignature
-        if (previousSortSignature.value !== nextSortSignature) {
+        if (sortChanged) {
           sortState.value = resolveInitialSortState()
           previousSortSignature.value = nextSortSignature
         }
@@ -509,6 +527,21 @@ const SFCRevoGridTable = defineComponent({
         if (visibilityChanged) {
           visibilityState.value = resolveInitialVisibilityState()
           previousVisibilitySignature.value = nextVisibilitySignature
+        }
+        previousStyleContract.value = props.styleContract
+        previousPaging.value = props.paging
+
+        if (
+          !columnsChanged
+          && !styleChanged
+          && !pagingChanged
+          && !sortChanged
+          && !pinChanged
+          && !visibilityChanged
+          && changedRows?.size === 0
+        ) {
+          scheduleRenderRefresh()
+          return
         }
 
         baseSource.value = nextBaseSource
@@ -532,6 +565,19 @@ const SFCRevoGridTable = defineComponent({
         schedulePublicSurfaceSync()
       },
     )
+
+    function scheduleRenderRefresh(): void {
+      if (!mounted || renderRefreshFrame != null)
+        return
+
+      renderRefreshFrame = requestAnimationFrame(() => {
+        renderRefreshFrame = null
+        if (!mounted)
+          return
+        void resolveGridElement(gridRef.value)?.refresh?.('all')
+        schedulePublicSurfaceSync()
+      })
+    }
 
     async function toggleColumnSort(column: SFCTableColumn, event?: MouseEvent): Promise<void> {
       event?.preventDefault()
@@ -1993,6 +2039,58 @@ function createColumnsSignature(columns: SFCTableColumn[]): string {
   return columns
     .map(column => `${column.key}:${column.title}:${column.width ?? ''}:${column.pinnable}:${column.sort?.sortable ?? false}:${column.sort?.comparator ?? ''}:${column.sort?.paths.join(',') ?? ''}`)
     .join('|')
+}
+
+function areEquivalentTableColumns(left: SFCTableColumn[], right: SFCTableColumn[]): boolean {
+  if (left === right)
+    return true
+  if (left.length !== right.length || createColumnsSignature(left) !== createColumnsSignature(right))
+    return false
+
+  return left.every((column, index) => {
+    const candidate = right[index]
+    if (!candidate)
+      return false
+    if (!haveSameReferences(column.cellNodes, candidate.cellNodes))
+      return false
+    if (!haveSameSetValues(column.rowDependencies, candidate.rowDependencies))
+      return false
+    if (!haveSameSerializableValue(column.metadata, candidate.metadata))
+      return false
+    return haveSameSerializableValue(column.styleSurfaces.headerCell.attrs, candidate.styleSurfaces.headerCell.attrs)
+      && haveSameSerializableValue(column.styleSurfaces.headerContent.attrs, candidate.styleSurfaces.headerContent.attrs)
+  })
+}
+
+function areEquivalentTableStyleContracts(left: SFCTableStyleContract, right: SFCTableStyleContract): boolean {
+  if (left === right)
+    return true
+  if (!haveSameReferences(left.context.styleArtifacts, right.context.styleArtifacts))
+    return false
+
+  return haveSameSerializableValue(left.grid.attrs, right.grid.attrs)
+    && haveSameSerializableValue(left.header.attrs, right.header.attrs)
+    && haveSameSerializableValue(left.body.attrs, right.body.attrs)
+    && haveSameSerializableValue(left.groupRow.attrs, right.groupRow.attrs)
+}
+
+function haveSameReferences<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function haveSameSetValues<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
+  return left.size === right.size && [...left].every(value => right.has(value))
+}
+
+function haveSameSerializableValue(left: unknown, right: unknown): boolean {
+  if (left === right)
+    return true
+  try {
+    return JSON.stringify(left) === JSON.stringify(right)
+  }
+  catch {
+    return false
+  }
 }
 
 function createTableSortSignature(
